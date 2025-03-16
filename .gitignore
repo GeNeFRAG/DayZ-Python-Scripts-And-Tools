@@ -1,6 +1,7 @@
 data/
 src/tools/nitrado/nitrado_api.json
 **/*.xml
+**/*.txt
 **/*.xlsx
 **/*.csv
 **/*.ADM
