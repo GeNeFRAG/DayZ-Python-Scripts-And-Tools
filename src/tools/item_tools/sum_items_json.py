@@ -45,6 +45,6 @@ with open(output_csv, mode='w', newline='') as file:
     writer = csv.writer(file)
     # Write the header row
     writer.writerow(["item", "count"])
-    # Write the item counts
-    for name, count in name_counts.items():
+    # Write the item counts sorted alphabetically by item name
+    for name, count in sorted(name_counts.items()):
         writer.writerow([name, count])

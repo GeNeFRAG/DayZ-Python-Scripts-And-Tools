@@ -51,16 +51,8 @@ def extract_info(line: str, file_date: str) -> Tuple[Optional[str], Optional[str
         position = tuple(float(coord.strip()) for coord in coords)
         
         # Extract action (everything after the coordinates)
-        action_match = re.search(r'>\s*(.*?)(?:\s*\(|\[|$)', line)
+        action_match = re.search(r'>\s*(.*?)(?:\s*\(|$)', line)
         action = action_match.group(1).strip() if action_match else ""
-        
-        # Remove trailing ')' if present
-        if action.endswith(')'):
-            action = action[:-1].strip()
-        
-        # Remove leading ')' if present
-        if action.startswith(')'):
-            action = action[1:].strip()
         
         return time_str, player_name, position, action
     except Exception as e:
@@ -153,13 +145,13 @@ def save_to_csv(results: List[tuple], output_file: str):
                 f"{distance:.2f}"
             ])
 
-def find_positions_by_players(file_pattern: str, player_names: List[str]) -> List[tuple]:
+def find_positions_by_player(file_pattern: str, player_name_filter: str) -> List[tuple]:
     """
-    Find positions and actions for specific players in multiple files
+    Find positions and actions for a specific player in multiple files
     
     Args:
         file_pattern: File pattern to search (e.g. "*.ADM")
-        player_names: List of player names to filter by
+        player_name_filter: Player name to filter by
     
     Returns:
         List of tuples containing file details and player actions
@@ -176,7 +168,7 @@ def find_positions_by_players(file_pattern: str, player_names: List[str]) -> Lis
                 for line_num, line in enumerate(file, 1):
                     time_str, player_name, coords, action = extract_info(line, file_date)
                     
-                    if player_name and any(player_name_filter.lower() in player_name.lower() for player_name_filter in player_names):
+                    if player_name and player_name_filter.lower() in player_name.lower():
                         player_positions.append((
                             os.path.basename(file_path),
                             line_num,
@@ -269,21 +261,21 @@ def main():
     parser.add_argument('--target_y', type=float, help='Target Y coordinate')
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters')
     parser.add_argument('--output', default='results.csv', help='Output CSV file name (default: results.csv)')
-    parser.add_argument('--player', nargs='+', help='Player names to filter by (optional)')
+    parser.add_argument('--player', help='Player name to filter by (optional)')
     parser.add_argument('--start-date', help='Start date in YYYY-MM-DD format (optional)')
     parser.add_argument('--end-date', help='End date in YYYY-MM-DD format (optional)')
     
     args = parser.parse_args()
     
     if args.player and (args.target_x is None or args.target_y is None):
-        results = find_positions_by_players(args.file_pattern, args.player)
+        results = find_positions_by_player(args.file_pattern, args.player)
         if not results:
-            print(f"No positions found for players: {', '.join(args.player)}.")
+            print(f"No positions found for player: {args.player}.")
             return
         results = filter_by_date_range(results, args.start_date, args.end_date)
         results = sort_by_time(results)
         save_player_positions_to_csv(results, args.output)
-        print(f"\nFound {len(results)} positions for players: {', '.join(args.player)}.")
+        print(f"\nFound {len(results)} positions for player: {args.player}.")
     else:
         results = find_nearby_positions(args.file_pattern, args.target_x, args.target_y, args.radius)
         if not results:

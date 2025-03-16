@@ -18,6 +18,14 @@ def update_usage(pos_file, proto_file, new_usage):
             usage = group.find('usage')
             if usage is not None:
                 usage.attrib['name'] = new_usage
+                group.remove(usage)
+                group.insert(0, usage)
+            else:
+                new_usage_elem = ET.Element('usage')
+                new_usage_elem.attrib['name'] = new_usage
+                group.insert(0, new_usage_elem)
+            # Ensure there is a newline after the usage tag
+            group.text = '\n' + (group.text or '')
     
     # Write the updated proto XML back to file
     proto_tree.write(proto_file)
