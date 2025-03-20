@@ -121,6 +121,7 @@ def main():
 
     args = parser.parse_args()
     organize_types_xml(args.input_xml_file, args.output_xml_file)
+    print(f"Sorted types.xml saved to {args.output_xml_file}")
 
 if __name__ == "__main__":
     main()
