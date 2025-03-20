@@ -240,7 +240,7 @@ def excel_to_xml(excel_file, output_xml_file):
         with open(output_xml_file, 'w', encoding='utf-8') as f:
             f.write(formatted_xml)
         
-        print(f"Successfully created new XML file: {output_xml_file}")
+        print(f"Successfully build new XML file: {output_xml_file}")
         return True
     except Exception as e:
         print(f"Error during Excel to XML conversion: {str(e)}", file=sys.stderr)
