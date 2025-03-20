@@ -7,4 +7,4 @@ src/tools/nitrado/nitrado_api.json
 **/*.ADM
 **/*.RPT
 
-create_types.sh
+build_types_from_excel.sh
