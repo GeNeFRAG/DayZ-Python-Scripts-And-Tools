@@ -21,7 +21,7 @@ from collections import Counter
 
 # Check if at least one filename is provided as a command-line argument
 if len(sys.argv) < 3:
-    print("Usage: python sum_names.py <output_csv> <json1> <json2> ...")
+    print("Usage: python sum_items_json.py <output_csv> <json1> <json2> ...")
     sys.exit(1)
 
 # Output CSV file
@@ -33,6 +33,7 @@ name_counts = Counter()
 # Process each file provided as a command-line argument
 for filename in sys.argv[2:]:
     # Open the JSON file
+    print(f"Processing {filename}")
     with open(filename, 'r') as file:
         data = json.load(file)
         # Extract the "name" values, excluding those starting with "StaticObj_" or "Land_"
@@ -48,3 +49,4 @@ with open(output_csv, mode='w', newline='') as file:
     # Write the item counts sorted alphabetically by item name
     for name, count in sorted(name_counts.items()):
         writer.writerow([name, count])
+    print(f"Results written to {output_csv}")
