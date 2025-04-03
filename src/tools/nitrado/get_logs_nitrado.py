@@ -139,23 +139,25 @@ class NitradoAPI:
             return None
 
 def filter_and_download_logs(api: NitradoAPI, 
-                           file_stats,
-                           start_date: str = None,
-                           end_date: str = None,
-                           filename_pattern: str = None,
-                           latest_default: bool = True) -> bool:
+                             file_stats,
+                             start_date: str = None,
+                             end_date: str = None,
+                             filename_patterns: list = None,
+                             latest_default: bool = True,
+                             download_all: bool = False) -> bool:
     """
     Filter and download log files based on various criteria.
     By default, downloads the 2 latest .RPT and 2 latest .ADM files.
-    
+
     Args:
         api: NitradoAPI instance
         file_stats: List of file statistics
         start_date: Start date in ISO format (YYYY-MM-DD)
         end_date: End date in ISO format (YYYY-MM-DD)
-        filename_pattern: Unix-style filename pattern
+        filename_patterns: List of Unix-style filename patterns
         latest_default: If True, download 2 latest .RPT and 2 latest .ADM files when no other filters match
-    
+        download_all: If True, download all .RPT and .ADM files
+
     Returns:
         bool: True if any files were downloaded successfully, False otherwise
     """
@@ -165,62 +167,69 @@ def filter_and_download_logs(api: NitradoAPI,
 
     filtered_files = []
 
-    # Apply filters if provided
-    if start_date or end_date or filename_pattern:
-        # Apply date filters if provided
-        # Apply date filters if provided
-        if start_date or end_date:
-            try:
-                # Convert start_date and end_date to datetime objects
-                start_dt = datetime.fromisoformat(start_date + "T00:00:00") if start_date else datetime.min
-                end_dt = datetime.fromisoformat(end_date + "T23:59:59") if end_date else datetime.max
-                
-                filtered_files = [
-                    f for f in file_stats
-                    if start_dt <= datetime.fromisoformat(f['modified_at']) <= end_dt
-                ]
-                print(f"Filtered files based on date range ({start_date} to {end_date}):")
-            except ValueError as e:
-                print(f"Error parsing dates: {e}")
-                return False
-
-        # Apply filename pattern if provided
-        if filename_pattern:
-            filtered_files = [
-                f for f in filtered_files
-                if fnmatch.fnmatch(f['name'].lower(), filename_pattern.lower())
-            ]
+    # If --all is specified, download all .RPT and .ADM files
+    if download_all:
+        filtered_files = [
+            f for f in file_stats if f['name'].endswith('.RPT') or f['name'].endswith('.ADM')
+        ]
+        print(f"Selected all .RPT and .ADM files: {len(filtered_files)} files")
     else:
-        # If no specific filters are provided and latest_default is True,
-        # get the 2 latest .RPT and 2 latest .ADM files
-        if latest_default:
-            # Get and sort RPT files by modification date
-            rpt_files = sorted(
-                [f for f in file_stats if f['name'].endswith('.RPT')],
-                key=lambda x: x['modified_at'],
-                reverse=True
-            )
-            
-            # Get and sort ADM files by modification date
-            adm_files = sorted(
-                [f for f in file_stats if f['name'].endswith('.ADM')],
-                key=lambda x: x['modified_at'],
-                reverse=True
-            )
-            
-            # Add up to 2 latest RPT files
-            if rpt_files:
-                filtered_files.extend(rpt_files[:2])
-                print(f"Selected {len(rpt_files[:2])} latest RPT files")
-            else:
-                print("No RPT files found")
+        # Apply filters if provided
+        if start_date or end_date or filename_patterns:
+            # Apply date filters if provided
+            if start_date or end_date:
+                try:
+                    # Convert start_date and end_date to datetime objects
+                    start_dt = datetime.fromisoformat(start_date + "T00:00:00") if start_date else datetime.min
+                    end_dt = datetime.fromisoformat(end_date + "T23:59:59") if end_date else datetime.max
 
-            # Add up to 2 latest ADM files
-            if adm_files:
-                filtered_files.extend(adm_files[:2])
-                print(f"Selected {len(adm_files[:2])} latest ADM files")
-            else:
-                print("No ADM files found")
+                    filtered_files = [
+                        f for f in file_stats
+                        if start_dt <= datetime.fromisoformat(f['modified_at']) <= end_dt
+                    ]
+                    print(f"Filtered files based on date range ({start_date} to {end_date}): {len(filtered_files)} files")
+                except ValueError as e:
+                    print(f"Error parsing dates: {e}")
+                    return False
+
+            # Apply filename patterns if provided
+            if filename_patterns:
+                filtered_files = [
+                    f for f in filtered_files
+                    if any(fnmatch.fnmatch(f['name'].lower(), pattern.lower()) for pattern in filename_patterns)
+                ]
+                print(f"Filtered files based on filename patterns: {len(filtered_files)} files")
+        else:
+            # If no specific filters are provided and latest_default is True,
+            # get the 2 latest .RPT and 2 latest .ADM files
+            if latest_default:
+                # Get and sort RPT files by modification date
+                rpt_files = sorted(
+                    [f for f in file_stats if f['name'].endswith('.RPT')],
+                    key=lambda x: x['modified_at'],
+                    reverse=True
+                )
+
+                # Get and sort ADM files by modification date
+                adm_files = sorted(
+                    [f for f in file_stats if f['name'].endswith('.ADM')],
+                    key=lambda x: x['modified_at'],
+                    reverse=True
+                )
+
+                # Add up to 2 latest RPT files
+                if rpt_files:
+                    filtered_files.extend(rpt_files[:2])
+                    print(f"Selected {len(rpt_files[:2])} latest RPT files")
+                else:
+                    print("No RPT files found")
+
+                # Add up to 2 latest ADM files
+                if adm_files:
+                    filtered_files.extend(adm_files[:2])
+                    print(f"Selected {len(adm_files[:2])} latest ADM files")
+                else:
+                    print("No ADM files found")
 
     if not filtered_files:
         print("No files matched the specified criteria")
@@ -258,12 +267,19 @@ def main():
     parser.add_argument("--start-date", help="Start date for log files (YYYY-MM-DD)")
     parser.add_argument("--end-date", help="End date for log files (YYYY-MM-DD)")
     parser.add_argument(
-        "--pattern", help='Filename pattern (e.g., "*.RPT" or "script_*.ADM")'
+        "--pattern",
+        action="append",
+        help='Filename pattern (e.g., "*.RPT" or "script_*.ADM"). Can be specified multiple times for multiple patterns.',
     )
     parser.add_argument(
         "--no-default",
         action="store_true",
         help="Disable downloading latest .RPT and .ADM files when no other filters match",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Download all .RPT and .ADM files",
     )
 
     args = parser.parse_args()
@@ -296,8 +312,9 @@ def main():
         file_stats,
         start_date=args.start_date,
         end_date=args.end_date,
-        filename_pattern=args.pattern,
+        filename_patterns=args.pattern,
         latest_default=not args.no_default,
+        download_all=args.all,
     )
 
 
