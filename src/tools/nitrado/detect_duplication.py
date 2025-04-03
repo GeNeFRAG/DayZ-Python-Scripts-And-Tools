@@ -90,23 +90,11 @@ def calculate_distance(pos1, pos2):
 
 # Detect suspicious duplication activity for multiple files
 def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_threshold=timedelta(seconds=10), login_threshold=timedelta(seconds=15), login_count_threshold=3):
-    """Detects suspicious duplication activities based on ADM and RPT logs.
-
-    Args:
-        adm_pattern (str): File pattern for ADM files (e.g., '/path/to/*.ADM').
-        rpt_pattern (str): File pattern for RPT files (e.g., '/path/to/*.RPT').
-        proximity_threshold (float): Proximity threshold in meters for loot spawns (default: 50).
-        time_threshold (timedelta): Time threshold for loot spawn and player position matching (default: 10 seconds).
-        login_threshold (timedelta): Time threshold for detecting multiple logins (default: 15 seconds).
-        login_count_threshold (int): Minimum number of logins within the login threshold to flag as suspicious (default: 3).
-
-    Returns:
-        tuple: A tuple containing:
-            - suspicious_activities (list): A list of dictionaries with details of suspicious duplication activities.
-            - suspicious_logins_list (list): A list of dictionaries with details of suspicious login events.
-    """
+    """Detects suspicious duplication activities based on ADM and RPT logs."""
     suspicious_activities = []
     suspicious_logins_list = []  # To store suspicious logins for CSV output
+    time_threshold_seconds = time_threshold.total_seconds()
+    login_threshold_seconds = login_threshold.total_seconds()
 
     # Get all matching ADM and RPT files
     adm_files = glob.glob(adm_pattern)
@@ -122,43 +110,58 @@ def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_th
 
         # Identify players with suspicious logins
         suspicious_logins = {}
+        flagged_players = set()  # Track players already flagged
         for login_time, player_name in login_events:
+            if player_name in flagged_players:
+                continue
             recent_logins = [
                 time for time, name in login_events
-                if name == player_name and abs((login_time - time).total_seconds()) <= login_threshold.total_seconds()
+                if name == player_name and abs((login_time - time).total_seconds()) <= login_threshold_seconds
             ]
             if len(recent_logins) >= login_count_threshold:
-                if player_name not in suspicious_logins:
-                    suspicious_logins[player_name] = []
-                suspicious_logins[player_name].extend(recent_logins)
-                # Avoid duplicate entries in suspicious_logins_list
-                if not any(login["player_name"] == player_name for login in suspicious_logins_list):
-                    suspicious_logins_list.append({
-                        "player_name": player_name,
-                        "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in recent_logins]
-                    })
+                flagged_players.add(player_name)
+                suspicious_logins[player_name] = recent_logins
+                suspicious_logins_list.append({
+                    "player_name": player_name,
+                    "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in recent_logins]
+                })
 
         # Check loot spawns for players with suspicious logins
         for player_name, login_times in suspicious_logins.items():
             for loot_time, loot_pos, loot_item in all_loot_spawns:
-                # Ensure loot spawn occurs during or shortly after suspicious logins
-                if any(abs((loot_time - login_time).total_seconds()) <= time_threshold.total_seconds() for login_time in login_times):
-                    for player_time, player_pos, name in player_positions:
-                        if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold.total_seconds():
-                            distance = calculate_distance(loot_pos, player_pos)
-                            if distance <= proximity_threshold:
-                                suspicious_activities.append({
-                                    "adm_file": adm_file_path,
-                                    "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                    "loot_pos": loot_pos,
-                                    "loot_item": loot_item,
-                                    "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                    "player_pos": player_pos,
-                                    "player_name": player_name,
-                                    "recent_logins": len(login_times)
-                                })
+                if any(abs((loot_time - login_time).total_seconds()) <= time_threshold_seconds for login_time in login_times):
+                    relevant_positions = [
+                        (player_time, player_pos) for player_time, player_pos, name in player_positions
+                        if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold_seconds
+                    ]
+                    for player_time, player_pos in relevant_positions:
+                        distance = calculate_distance(loot_pos, player_pos)
+                        if distance <= proximity_threshold:
+                            suspicious_activities.append({
+                                "adm_file": adm_file_path,
+                                "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                "loot_pos": loot_pos,
+                                "loot_item": loot_item,
+                                "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                "player_pos": player_pos,
+                                "player_name": player_name,
+                                "recent_logins": len(login_times)
+                            })
 
     return suspicious_activities, suspicious_logins_list
+
+def write_csv(file_name, fieldnames, data):
+    """Writes data to a CSV file.
+
+    Args:
+        file_name (str): The name of the CSV file.
+        fieldnames (list): The list of field names for the CSV.
+        data (list): The list of dictionaries to write to the CSV.
+    """
+    with open(file_name, "w", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(data)
 
 # Main function
 if __name__ == "__main__":
@@ -180,34 +183,26 @@ if __name__ == "__main__":
     login_threshold = timedelta(seconds=args.login_threshold)
     login_count_threshold = args.login_count_threshold
 
-    suspicious_activities, suspicious_logins = detect_duplication(
+    suspicious_activities, suspicious_logins_list = detect_duplication(  # Ensure correct variable name is used
         adm_pattern, rpt_pattern, proximity_threshold, time_threshold, login_threshold, login_count_threshold
     )
 
     # Write suspicious activities to a CSV file
-    with open("suspicious_activities.csv", "w", newline="") as csvfile:
-        fieldnames = ["adm_file", "loot_time", "loot_pos", "loot_item", "player_time", "player_pos", "player_name", "recent_logins"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(suspicious_activities)
+    write_csv("suspicious_activities.csv", 
+              ["adm_file", "loot_time", "loot_pos", "loot_item", "player_time", "player_pos", "player_name", "recent_logins"], 
+              suspicious_activities)
 
     # Write suspicious logins to a CSV file
-    with open("suspicious_logins.csv", "w", newline="") as csvfile:
-        fieldnames = ["player_name", "recent_logins"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        for login in suspicious_logins:
-            writer.writerow({
-                "player_name": login["player_name"],
-                "recent_logins": ", ".join(login["recent_logins"])
-            })
+    write_csv("suspicious_logins.csv", 
+              ["player_name", "recent_logins"], 
+              [{"player_name": login["player_name"], "recent_logins": ", ".join(login["recent_logins"])} for login in suspicious_logins_list])
 
     if suspicious_activities:
         print("Suspicious duplication activities detected. Results saved to 'suspicious_activities.csv'.")
     else:
         print("No suspicious activities detected.")
 
-    if suspicious_logins:
+    if suspicious_logins_list:  # Ensure correct variable name is used
         print("Suspicious logins detected. Results saved to 'suspicious_logins.csv'.")
     else:
         print("No suspicious logins detected.")
