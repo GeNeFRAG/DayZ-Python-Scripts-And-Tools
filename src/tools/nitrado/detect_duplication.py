@@ -141,20 +141,22 @@ def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_th
         # Check loot spawns for players with suspicious logins
         for player_name, login_times in suspicious_logins.items():
             for loot_time, loot_pos, loot_item in all_loot_spawns:
-                for player_time, player_pos, name in player_positions:
-                    if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold.total_seconds():
-                        distance = calculate_distance(loot_pos, player_pos)
-                        if distance <= proximity_threshold:
-                            suspicious_activities.append({
-                                "adm_file": adm_file_path,
-                                "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                "loot_pos": loot_pos,
-                                "loot_item": loot_item,
-                                "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                "player_pos": player_pos,
-                                "player_name": player_name,
-                                "recent_logins": len(login_times)
-                            })
+                # Ensure loot spawn occurs during or shortly after suspicious logins
+                if any(abs((loot_time - login_time).total_seconds()) <= time_threshold.total_seconds() for login_time in login_times):
+                    for player_time, player_pos, name in player_positions:
+                        if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold.total_seconds():
+                            distance = calculate_distance(loot_pos, player_pos)
+                            if distance <= proximity_threshold:
+                                suspicious_activities.append({
+                                    "adm_file": adm_file_path,
+                                    "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                    "loot_pos": loot_pos,
+                                    "loot_item": loot_item,
+                                    "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                    "player_pos": player_pos,
+                                    "player_name": player_name,
+                                    "recent_logins": len(login_times)
+                                })
 
     return suspicious_activities, suspicious_logins_list
 
