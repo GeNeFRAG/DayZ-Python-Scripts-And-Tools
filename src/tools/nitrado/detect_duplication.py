@@ -166,7 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--rpt-pattern", required=True, help="File pattern for RPT files (e.g., '/path/to/*.RPT').")
     parser.add_argument("--proximity-threshold", type=float, default=10, help="Proximity threshold in meters (default: 10).")
     parser.add_argument("--time-threshold", type=int, default=10, help="Time threshold in seconds (default: 10).")
-    parser.add_argument("--login-threshold", type=int, default=15, help="Login threshold in seconds (default: 15).")
+    parser.add_argument("--login-threshold", type=int, default=300, help="Login threshold in seconds (default: 300).")
     parser.add_argument("--login-count-threshold", type=int, default=3, help="Login count threshold (default: 3).")
 
     args = parser.parse_args()
