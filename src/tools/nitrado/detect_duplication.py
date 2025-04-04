@@ -184,7 +184,7 @@ if __name__ == "__main__":
     parser.add_argument("--adm-file", required=True, help="File or pattern for ADM files (e.g., '/path/to/*.ADM').")
     parser.add_argument("--rpt-file", required=True, help="File or pattern for RPT files (e.g., '/path/to/*.RPT').")
     parser.add_argument("--proximity-threshold", type=float, default=10, help="Proximity threshold of spwaned loot near the player in meters (default: 10).")
-    parser.add_argument("--time-threshold", type=int, default=300, help="Time threshold of spawned loot near the Player in seconds (default: 300).")
+    parser.add_argument("--time-threshold", type=int, default=60, help="Time threshold of spawned loot near the Player in seconds (default: 60).")
     parser.add_argument("--login-threshold", type=int, default=300, help="Login threshold in seconds (default: 300).")
     parser.add_argument("--login-count-threshold", type=int, default=3, help="Login count threshold (default: 3).")
 
