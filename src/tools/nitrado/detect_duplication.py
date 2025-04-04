@@ -110,21 +110,33 @@ def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_th
 
         # Identify players with suspicious logins
         suspicious_logins = {}
-        flagged_players = set()  # Track players already flagged
-        for login_time, player_name in login_events:
-            if player_name in flagged_players:
-                continue
-            recent_logins = [
-                time for time, name in login_events
-                if name == player_name and abs((login_time - time).total_seconds()) <= login_threshold_seconds
-            ]
-            if len(recent_logins) >= login_count_threshold:
-                flagged_players.add(player_name)
-                suspicious_logins[player_name] = recent_logins
-                suspicious_logins_list.append({
-                    "player_name": player_name,
-                    "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in recent_logins]
-                })
+        for player_name in set(name for _, name in login_events):  # Process each player once
+            player_logins = [time for time, name in login_events if name == player_name]
+            player_logins.sort()  # Ensure logins are sorted by time
+
+            clusters = []  # To store clusters of suspicious logins
+            current_cluster = [player_logins[0]]  # Start with the first login
+
+            for i in range(1, len(player_logins)):
+                if (player_logins[i] - player_logins[i - 1]).total_seconds() <= login_threshold_seconds:
+                    current_cluster.append(player_logins[i])
+                else:
+                    if len(current_cluster) >= login_count_threshold:
+                        clusters.append(current_cluster)
+                    current_cluster = [player_logins[i]]
+
+            # Check the last cluster
+            if len(current_cluster) >= login_count_threshold:
+                clusters.append(current_cluster)
+
+            # Add clusters to suspicious logins
+            if clusters:
+                suspicious_logins[player_name] = clusters
+                for cluster in clusters:
+                    suspicious_logins_list.append({
+                        "player_name": player_name,
+                        "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in cluster]
+                    })
 
         # Check loot spawns for players with suspicious logins
         for player_name, login_times in suspicious_logins.items():
@@ -167,10 +179,10 @@ def write_csv(file_name, fieldnames, data):
 if __name__ == "__main__":
     """Main function to parse arguments, detect suspicious activities, and save results to CSV files."""
     parser = argparse.ArgumentParser(description="Detect suspicious duplication activities in DayZ server logs.")
-    parser.add_argument("--adm-pattern", required=True, help="File pattern for ADM files (e.g., '/path/to/*.ADM').")
-    parser.add_argument("--rpt-pattern", required=True, help="File pattern for RPT files (e.g., '/path/to/*.RPT').")
-    parser.add_argument("--proximity-threshold", type=float, default=10, help="Proximity threshold in meters (default: 10).")
-    parser.add_argument("--time-threshold", type=int, default=10, help="Time threshold in seconds (default: 10).")
+    parser.add_argument("--adm-file", required=True, help="File or pattern for ADM files (e.g., '/path/to/*.ADM').")
+    parser.add_argument("--rpt-file", required=True, help="File or pattern for RPT files (e.g., '/path/to/*.RPT').")
+    parser.add_argument("--proximity-threshold", type=float, default=10, help="Proximity threshold of spwaned loot near the player in meters (default: 10).")
+    parser.add_argument("--time-threshold", type=int, default=300, help="Time threshold of spawned loot near the Player in seconds (default: 300).")
     parser.add_argument("--login-threshold", type=int, default=300, help="Login threshold in seconds (default: 300).")
     parser.add_argument("--login-count-threshold", type=int, default=3, help="Login count threshold (default: 3).")
 
