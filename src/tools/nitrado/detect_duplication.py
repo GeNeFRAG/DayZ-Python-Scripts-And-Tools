@@ -139,9 +139,11 @@ def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_th
                     })
 
         # Check loot spawns for players with suspicious logins
-        for player_name, login_times in suspicious_logins.items():
+        for player_name, login_clusters in suspicious_logins.items():  # Iterate over clusters
             for loot_time, loot_pos, loot_item in all_loot_spawns:
-                if any(abs((loot_time - login_time).total_seconds()) <= time_threshold_seconds for login_time in login_times):
+                # Ensure loot spawn occurs during or shortly after any suspicious login in any cluster
+                if any(abs((loot_time - login_time).total_seconds()) <= time_threshold_seconds 
+                       for cluster in login_clusters for login_time in cluster):
                     relevant_positions = [
                         (player_time, player_pos) for player_time, player_pos, name in player_positions
                         if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold_seconds
@@ -157,7 +159,7 @@ def detect_duplication(adm_pattern, rpt_pattern, proximity_threshold=50, time_th
                                 "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
                                 "player_pos": player_pos,
                                 "player_name": player_name,
-                                "recent_logins": len(login_times)
+                                "recent_logins": len(login_clusters)
                             })
 
     return suspicious_activities, suspicious_logins_list
@@ -188,8 +190,8 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    adm_pattern = args.adm_pattern
-    rpt_pattern = args.rpt_pattern
+    adm_pattern = args.adm_file
+    rpt_pattern = args.rpt_file
     proximity_threshold = args.proximity_threshold
     time_threshold = timedelta(seconds=args.time_threshold)
     login_threshold = timedelta(seconds=args.login_threshold)
