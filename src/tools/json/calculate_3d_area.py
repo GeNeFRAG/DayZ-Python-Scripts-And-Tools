@@ -56,7 +56,7 @@ print("")
 
 # Replace the last few print statements with this enhanced visualization
 print("\nEnhanced 3D Visualization:")
-print(f"    z={min_z}                 z={max_z}")
+print(f"    {min_x:.2f}/{min_z:.2f}      {min_x:.2f}/{max_z:.2f}")
 print(f"    +---------------------+ y={dimension_y:.2f}m")
 print("   /|                    /|")
 print("  / |                   / |")
@@ -69,7 +69,8 @@ print("|  /                  |  /")
 print("| /                   | /")
 print("|/                    |/")
 print("+---------------------+")
-print(f"x={min_x}                 x={max_x}\n")
+print(f"{max_x:.2f}/{min_z:.2f}      {max_x:.2f}/{max_z:.2f}\n")
+
 
 # Add dimension labels
 print("Box Dimensions:")
