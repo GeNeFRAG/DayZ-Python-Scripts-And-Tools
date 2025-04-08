@@ -1,5 +1,6 @@
 import json
 import argparse
+import os
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Calculate 3D area from JSON file.')
@@ -77,3 +78,54 @@ print("Box Dimensions:")
 print(f"Length (X): {dimension_x:.2f}m")
 print(f"Height (Y): {dimension_y:.2f}m")
 print(f"Width (Z): {dimension_z:.2f}m")
+
+# Box dimensions
+box_width = 50
+box_height = 50
+box_length = 50
+
+# Calculate the number of boxes needed along each dimension
+num_boxes_x = int((dimension_x + box_width - 1) // box_width)  # Ceiling division
+num_boxes_y = int((dimension_y + box_height - 1) // box_height)
+num_boxes_z = int((dimension_z + box_length - 1) // box_length)
+
+# Generate box positions
+boxes = []
+for i in range(num_boxes_x):
+    for j in range(num_boxes_y):
+        for k in range(num_boxes_z):
+            box_x = min_x + i * box_width
+            box_y = min_y + j * box_height
+            box_z = min_z + k * box_length
+            boxes.append([
+                [box_width, box_height, box_length],
+                [0, 0, 0],
+                [box_x, box_y, box_z]
+            ])
+
+# Create JSON structure
+output_data = {
+    "areaName": "Generated_3D_Area",
+    "PRABoxes": boxes,
+    "safePositions3D": []  # Add safe positions if needed
+}
+
+# Output to JSON file
+output_file = os.path.join(os.path.dirname(args.json_file), "output_boxes.json")
+with open(output_file, 'w') as json_file:
+    json.dump(output_data, json_file, indent=2)
+
+print(f"Output written to {output_file}")
+
+# Print box placement summary
+print("\nBox Placement Summary:")
+print(f"Number of boxes along X: {num_boxes_x}")
+print(f"Number of boxes along Y: {num_boxes_y}")
+print(f"Number of boxes along Z: {num_boxes_z}")
+print(f"Total boxes: {len(boxes)}")
+
+# Optionally, print the positions of the boxes
+print("\nBox Positions:")
+for box in boxes:
+    print(f"Box at ({box[2][0]:.2f}, {box[2][1]:.2f}, {box[2][2]:.2f}) "
+          f"with dimensions ({box[0][0]}x{box[0][1]}x{box[0][2]})")
