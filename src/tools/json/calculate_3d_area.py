@@ -79,17 +79,35 @@ print(f"Length (X): {dimension_x:.2f}m")
 print(f"Height (Y): {dimension_y:.2f}m")
 print(f"Width (Z): {dimension_z:.2f}m")
 
-# Box dimensions
-box_width = 50
-box_height = 50
-box_length = 50
+def find_optimal_box_size(dimension_x, dimension_y, dimension_z, max_box_size):
+    optimal_box_size = [max_box_size, max_box_size, max_box_size]
+    min_boxes = float('inf')
 
-# Calculate the number of boxes needed along each dimension
+    for box_width in range(1, max_box_size + 1):
+        for box_height in range(1, max_box_size + 1):
+            for box_length in range(1, max_box_size + 1):
+                num_boxes_x = (dimension_x + box_width - 1) // box_width  # Ceiling division
+                num_boxes_y = (dimension_y + box_height - 1) // box_height
+                num_boxes_z = (dimension_z + box_length - 1) // box_length
+                total_boxes = num_boxes_x * num_boxes_y * num_boxes_z
+
+                if total_boxes < min_boxes:
+                    min_boxes = total_boxes
+                    optimal_box_size = [box_width, box_height, box_length]
+
+    return optimal_box_size
+
+# Find the optimal box size
+max_box_size = 50  # Maximum box size to consider
+optimal_box_size = find_optimal_box_size(dimension_x, dimension_y, dimension_z, max_box_size)
+box_width, box_height, box_length = optimal_box_size
+
+# Calculate the number of boxes needed along each dimension with the optimal size
 num_boxes_x = int((dimension_x + box_width - 1) // box_width)  # Ceiling division
 num_boxes_y = int((dimension_y + box_height - 1) // box_height)
 num_boxes_z = int((dimension_z + box_length - 1) // box_length)
 
-# Generate box positions
+# Generate box positions with the optimal size
 boxes = []
 for i in range(num_boxes_x):
     for j in range(num_boxes_y):
@@ -118,7 +136,8 @@ with open(output_file, 'w') as json_file:
 print(f"Output written to {output_file}")
 
 # Print box placement summary
-print("\nBox Placement Summary:")
+print("\nOptimal Box Placement Summary:")
+print(f"Optimal Box Dimensions: {box_width}x{box_height}x{box_length}")
 print(f"Number of boxes along X: {num_boxes_x}")
 print(f"Number of boxes along Y: {num_boxes_y}")
 print(f"Number of boxes along Z: {num_boxes_z}")
