@@ -1,6 +1,9 @@
 import json
 import argparse
 import os
+from math import ceil
+from itertools import product
+from typing import List, Tuple
 
 # Parse command-line arguments
 parser = argparse.ArgumentParser(description='Calculate 3D area from JSON file.')
@@ -79,21 +82,19 @@ print(f"Length (X): {dimension_x:.2f}m")
 print(f"Height (Y): {dimension_y:.2f}m")
 print(f"Width (Z): {dimension_z:.2f}m")
 
-def find_optimal_box_size(dimension_x, dimension_y, dimension_z, max_box_size):
+def find_optimal_box_size(dimension_x: float, dimension_y: float, dimension_z: float, max_box_size: int) -> List[int]:
     optimal_box_size = [max_box_size, max_box_size, max_box_size]
     min_boxes = float('inf')
 
-    for box_width in range(1, max_box_size + 1):
-        for box_height in range(1, max_box_size + 1):
-            for box_length in range(1, max_box_size + 1):
-                num_boxes_x = (dimension_x + box_width - 1) // box_width  # Ceiling division
-                num_boxes_y = (dimension_y + box_height - 1) // box_height
-                num_boxes_z = (dimension_z + box_length - 1) // box_length
-                total_boxes = num_boxes_x * num_boxes_y * num_boxes_z
+    for box_width, box_height, box_length in product(range(1, max_box_size + 1), repeat=3):
+        num_boxes_x = ceil(dimension_x / box_width)
+        num_boxes_y = ceil(dimension_y / box_height)
+        num_boxes_z = ceil(dimension_z / box_length)
+        total_boxes = num_boxes_x * num_boxes_y * num_boxes_z
 
-                if total_boxes < min_boxes:
-                    min_boxes = total_boxes
-                    optimal_box_size = [box_width, box_height, box_length]
+        if total_boxes < min_boxes:
+            min_boxes = total_boxes
+            optimal_box_size = [box_width, box_height, box_length]
 
     return optimal_box_size
 
@@ -103,23 +104,21 @@ optimal_box_size = find_optimal_box_size(dimension_x, dimension_y, dimension_z, 
 box_width, box_height, box_length = optimal_box_size
 
 # Calculate the number of boxes needed along each dimension with the optimal size
-num_boxes_x = int((dimension_x + box_width - 1) // box_width)  # Ceiling division
-num_boxes_y = int((dimension_y + box_height - 1) // box_height)
-num_boxes_z = int((dimension_z + box_length - 1) // box_length)
+num_boxes_x = ceil(dimension_x / box_width)
+num_boxes_y = ceil(dimension_y / box_height)
+num_boxes_z = ceil(dimension_z / box_length)
 
 # Generate box positions with the optimal size
-boxes = []
-for i in range(num_boxes_x):
-    for j in range(num_boxes_y):
-        for k in range(num_boxes_z):
-            box_x = min_x + i * box_width
-            box_y = min_y + j * box_height
-            box_z = min_z + k * box_length
-            boxes.append([
-                [box_width, box_height, box_length],
-                [0, 0, 0],
-                [box_x, box_y, box_z]
-            ])
+boxes = [
+    [
+        [box_width, box_height, box_length],
+        [0, 0, 0],
+        [min_x + i * box_width, min_y + j * box_height, min_z + k * box_length]
+    ]
+    for i in range(num_boxes_x)
+    for j in range(num_boxes_y)
+    for k in range(num_boxes_z)
+]
 
 # Create JSON structure
 output_data = {
