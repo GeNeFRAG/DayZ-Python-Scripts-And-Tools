@@ -4,6 +4,7 @@ import os
 
 def parse_log(file_path, start_datetime=None, end_datetime=None):
     kills = {}
+    killed_tags = {}
     log_date = None
 
     with open(file_path, 'r') as file:
@@ -29,13 +30,19 @@ def parse_log(file_path, start_datetime=None, end_datetime=None):
                 if end_datetime and log_datetime > end_datetime:
                     continue
 
-                # Extract killer's name
+                # Extract killer's name and killed player's name
                 killer = line.split('killed by Player "')[1].split('"')[0]
+                killed = line.split('Player "')[1].split('"')[0]
+
+                # Update kills and killed Gamertags
                 kills[killer] = kills.get(killer, 0) + 1
+                if killer not in killed_tags:
+                    killed_tags[killer] = []
+                killed_tags[killer].append(killed)
 
     # Sort kills by count in descending order
     sorted_kills = sorted(kills.items(), key=lambda x: x[1], reverse=True)
-    return sorted_kills
+    return sorted_kills, killed_tags
 
 def main():
     parser = argparse.ArgumentParser(description="Parse DayZ log files in a directory and count kills per player.")
@@ -60,16 +67,26 @@ def main():
 
     # Aggregate kills across all .ADM files
     total_kills = {}
+    total_killed_tags = {}
     for file_path in adm_files:
-        kills = parse_log(file_path, start_datetime, end_datetime)
+        kills, killed_tags = parse_log(file_path, start_datetime, end_datetime)
         for player, count in kills:
             total_kills[player] = total_kills.get(player, 0) + count
+        for player, tags in killed_tags.items():
+            if player not in total_killed_tags:
+                total_killed_tags[player] = []
+            total_killed_tags[player].extend(tags)
 
     # Sort and print results
     sorted_kills = sorted(total_kills.items(), key=lambda x: x[1], reverse=True)
     print("Kills per player (ranked):")
+    grand_total = 0
     for rank, (player, count) in enumerate(sorted_kills, start=1):
-        print(f"{rank}. {player}: {count} kills")
+        killed_list = ", ".join(total_killed_tags[player])
+        print(f"{rank}. {player}: {count} kills (Killed: {killed_list})")
+        grand_total += count
+
+    print(f"\nGrand Total (GT) of kills: {grand_total}")
 
 if __name__ == "__main__":
     main()
