@@ -17,9 +17,10 @@ root = tree.getroot()
 staticbuilder_events = []
 for event in root.findall('event'):
     name = event.attrib.get('name', '')
-    if name.startswith('StaticBuilder_'):
+    active = event.find('active')
+    if name.startswith('StaticBuilder_') and active is not None and active.text.strip() == "1":
         staticbuilder_events.append(name)
-print(f"Found {len(staticbuilder_events)} StaticBuilder_* events.")
+print(f"Found {len(staticbuilder_events)} active StaticBuilder_* events.")
 
 print(f"Reading group 'SkullsMaterials' from: {groups_path}")
 tree = ET.parse(groups_path)
@@ -32,13 +33,13 @@ for group in root.findall('group'):
         for child in group.findall('child'):
             item_type = child.attrib.get('type')
             if item_type:
-                item_counts[item_type] += 1
+                item_counts[item_type] += len(staticbuilder_events)
         break
 
 if not group_found:
     print("Warning: Group 'SkullsMaterials' not found in cfgeventgroups.xml.")
 
-print(f"Found {sum(item_counts.values())} items in group 'SkullsMaterials'. Writing output to: {output_csv}")
+print(f"Found {sum(item_counts.values())} items in group 'SkullsMaterials' (multiplied by {len(staticbuilder_events)} active events). Writing output to: {output_csv}")
 
 with open(output_csv, "w", newline="") as f:
     writer = csv.writer(f)
