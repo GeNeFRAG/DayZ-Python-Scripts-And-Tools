@@ -50,3 +50,7 @@ with open(output_csv, mode='w', newline='') as file:
     for name, count in sorted(name_counts.items()):
         writer.writerow([name, count])
     print(f"Results written to {output_csv}")
+
+# Print the total number of items found
+total_items = sum(name_counts.values())
+print(f"Total items found: {total_items}")
