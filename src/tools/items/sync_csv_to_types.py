@@ -34,6 +34,8 @@ def read_csv_counts(csv_file):
             raise KeyError(f"CSV file must contain 'item' and 'count' columns. Found columns: {reader.fieldnames}")
         for row in reader:
             counts[row['item']] = int(row['count'])
+    if not counts:
+        print(f"Warning: CSV file '{csv_file}' is empty. No items will be updated.")
     return counts
 
 def sort_items_alphabetically(items):

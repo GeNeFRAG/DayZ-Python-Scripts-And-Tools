@@ -22,6 +22,14 @@ for event in root.findall('event'):
         staticbuilder_events.append(name)
 print(f"Found {len(staticbuilder_events)} active StaticBuilder_* events.")
 
+if len(staticbuilder_events) == 0:
+    # Write empty CSV with header and exit
+    with open(output_csv, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["item", "count"])
+    print(f"No active StaticBuilder_* events. Created empty CSV at: {output_csv}")
+    sys.exit(0)
+
 print(f"Reading group 'SkullsMaterials' from: {groups_path}")
 tree = ET.parse(groups_path)
 root = tree.getroot()
