@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Search Overtime Finder Tool
+
+This is a wrapper script for the dayz_admin_tools.tools.search_overtime_finder module.
+"""
+
+from dayz_admin_tools.tools.search_overtime_finder import main
+
+if __name__ == '__main__':
+    main()

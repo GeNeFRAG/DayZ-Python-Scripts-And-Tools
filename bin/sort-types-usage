@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Sort Types Usage Tool
+
+This is a wrapper script for the dayz_admin_tools.xml.types.sort_types_usage module.
+"""
+
+from dayz_admin_tools.xml.types.sort_types_usage import main
+
+if __name__ == '__main__':
+    main()

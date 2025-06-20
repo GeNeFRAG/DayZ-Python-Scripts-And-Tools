@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Log Filter Profiles Tool
+
+This is a wrapper script for the dayz_admin_tools.log.log_filter_profiles module.
+"""
+
+from dayz_admin_tools.log.log_filter_profiles import main
+
+if __name__ == '__main__':
+    main()

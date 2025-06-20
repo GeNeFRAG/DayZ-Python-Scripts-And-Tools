@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Copy Types Values Tool
+
+This is a wrapper script for the dayz_admin_tools.xml.types.copy_types_values module.
+"""
+
+from dayz_admin_tools.xml.types.copy_types_values import main
+
+if __name__ == '__main__':
+    main()

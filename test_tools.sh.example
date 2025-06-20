@@ -1,0 +1,451 @@
+#!/bin/bash
+# Simple shell script to test DayZ Admin Tools
+# This script runs tools using the entry points defined in setup.py
+# and uses the default config profile
+
+set -e  # Exit on error
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+SRC_DIR="$SCRIPT_DIR/src" # Use the default profile
+CONFIG_PROFILE="test"
+
+# Paths to your existing files - mainly for reference
+DAYZ_CHERNARUS_DIR="/path/to/your/project"
+
+# Colors for output
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Verify required input files exist
+verify_input_files() {
+    echo -e "${YELLOW}Verifying input files...${NC}"
+    local DEFAULT_CONFIG_PATH="$SRC_DIR/config/profiles/test.json"
+    
+    if [ ! -f "$DEFAULT_CONFIG_PATH" ]; then
+        echo -e "${RED}✗ Default config file not found: $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    # Read paths from the default config
+    local TYPES_PATH=$(grep -o '"types_file": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    local TYPES_REF_PATH=$(grep -o '"types_file_ref": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    local PROTO_PATH=$(grep -o '"mapgroupproto_file": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    local LIMITS_PATH=$(grep -o '"cfglimitsdefinition_file": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    local EVENTS_PATH=$(grep -o '"events_file": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    local EVENT_GROUPS_PATH=$(grep -o '"event_groups_file": *"[^"]*"' "$DEFAULT_CONFIG_PATH" | cut -d'"' -f4)
+    
+    # This path is outside the config but needed for tests
+    local BUNKER_AREA_PATH="$DAYZ_CHERNARUS_DIR/custom/b_Bunker_BlackLake_v2_Area.json"
+    
+    # Check existence of required files
+    echo -e "${BLUE}Checking types file...${NC}"
+    if [ ! -f "$TYPES_PATH" ]; then
+        echo -e "${RED}✗ Types file not found: $TYPES_PATH${NC}"
+        echo -e "${YELLOW}Hint: Update the path in $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}Checking types reference file...${NC}"
+    if [ ! -f "$TYPES_REF_PATH" ]; then
+        echo -e "${YELLOW}⚠ Types reference file not found: $TYPES_REF_PATH${NC}"
+        echo -e "${YELLOW}Some comparison tests may fail${NC}"
+    fi
+    
+    echo -e "${BLUE}Checking mapgroupproto file...${NC}"
+    if [ ! -f "$PROTO_PATH" ]; then
+        echo -e "${RED}✗ MapGroupProto file not found: $PROTO_PATH${NC}"
+        echo -e "${YELLOW}Hint: Update the path in $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}Checking cfglimitsdefinition file...${NC}"
+    if [ ! -f "$LIMITS_PATH" ]; then
+        echo -e "${RED}✗ CfgLimitsDefinition file not found: $LIMITS_PATH${NC}"
+        echo -e "${YELLOW}Hint: Update the path in $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}Checking events file...${NC}"
+    if [ ! -f "$EVENTS_PATH" ]; then
+        echo -e "${RED}✗ Events file not found: $EVENTS_PATH${NC}"
+        echo -e "${YELLOW}Hint: Update the path in $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}Checking event groups file...${NC}"
+    if [ ! -f "$EVENT_GROUPS_PATH" ]; then
+        echo -e "${RED}✗ Event groups file not found: $EVENT_GROUPS_PATH${NC}"
+        echo -e "${YELLOW}Hint: Update the path in $DEFAULT_CONFIG_PATH${NC}"
+        return 1
+    fi
+    
+    echo -e "${GREEN}✓ All required input files verified${NC}"
+    return 0
+}
+
+# Note: We no longer need to create test files as we'll use real files via the default config
+
+# Run a test and check if output file exists
+run_test() {
+    local command="$1"
+    local args="$2"
+    local expected_output="$3"
+    local test_name="$4"
+    local ignore_exit_code="${5:-false}"  # New parameter to optionally ignore exit codes
+    
+    echo -e "\n${YELLOW}Running test: $test_name${NC}"
+    
+    # Run the command using entry point
+    cmd="$command $args --profile $CONFIG_PROFILE --console"
+    echo "$ $cmd"
+    
+    # Actually run the command and show output
+    echo -e "${BLUE}Running command with logging output:${NC}"
+    
+    if [[ "$ignore_exit_code" == "true" ]]; then
+        # Temporarily disable 'exit on error'
+        set +e
+        $cmd
+        CMD_RESULT=$?
+        set -e
+        
+        # For tools that return non-zero values as part of normal operation
+        echo -e "${GREEN}✓ Command completed with exit code: $CMD_RESULT${NC}"
+    else
+        # Normal execution with error checking
+        if ! $cmd; then
+            echo -e "${RED}✗ Test failed: Command returned non-zero exit status${NC}"
+            return 1
+        fi
+    fi
+    
+    # Check for expected output file
+    if [[ -n "$expected_output" ]]; then
+        if [[ -f "$expected_output" ]]; then
+            echo -e "${GREEN}✓ Found expected output: $expected_output${NC}"
+            # Optional: print file contents or perform additional validation
+            echo "  File exists with size: $(wc -c < "$expected_output") bytes"
+        else
+            echo -e "${RED}✗ Expected output file not found: $expected_output${NC}"
+            return 1
+        fi
+    fi
+    
+    # Print a clear separator after each test
+    echo -e "${GREEN}----------------------------------------------------${NC}"
+    return 0
+}
+
+# Test JSON tools
+test_json_tools() {
+    echo -e "\n${YELLOW}=== Testing JSON Tools ===${NC}"
+    
+    # Test calculate_3d_area using entry point
+    # This path is specific to this test and not in the config
+    local BUNKER_AREA_PATH="/path/to/your/json"
+    if [ -f "$BUNKER_AREA_PATH" ]; then
+        # Set environment variables for verbose logging
+        
+        echo ""
+        echo -e "${BLUE}====================================${NC}"
+        echo -e "${BLUE}Running test: dayz-calculate-3d-area${NC}"
+        echo -e "${BLUE}====================================${NC}"
+        PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-calculate-3d-area $BUNKER_AREA_PATH --profile $CONFIG_PROFILE
+    else
+        echo -e "${YELLOW}⚠ Skipping 3D area calculation test - input file not found${NC}"
+    fi
+
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-generate-spawner-entries ${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-generate-spawner-entries "ACOGOptic:10:100:100:100" --profile $CONFIG_PROFILE
+
+    local TRADER_PATH="/path/to/your/json"
+    if [ -f "$TRADER_PATH" ]; then
+
+        echo ""
+        echo -e "${BLUE}========================================${NC}"
+        echo -e "${BLUE}Running test: dayz-split-loot-structures${NC}"
+        echo -e "${BLUE}========================================${NC}"
+        PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-split-loot-structures --input-json $TRADER_PATH --profile $CONFIG_PROFILE
+    else
+        echo -e "${YELLOW}⚠ Skipping dayz-split-loot-structures test - input file not found${NC}"
+    fi
+
+    local FILE1="/path/to/your/json"
+    local FILE2="/path/to/your/json"
+    if [ -f "$FILE1" || [ -f "$FILE2" ] ]; then
+
+        echo ""
+        echo -e "${BLUE}=================================${NC}"
+        echo -e "${BLUE}Running test: dayz-sum-items-json${NC}"
+        echo -e "${BLUE}=================================${NC}"
+        PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-items-json $FILE1 $FILE2 --profile $CONFIG_PROFILE
+    else
+        echo -e "${YELLOW}⚠ Skipping dayz-split-loot-structures test - input file not found${NC}"
+    fi
+}
+
+# Test log and NITRADO package
+test_log_tools() {
+    echo -e "\n${YELLOW}=== Testing NITRADO Log Tools ===${NC}"
+    
+    echo ""
+    echo -e "${BLUE}=============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-download-logs: save filter${NC}"
+    echo -e "${BLUE}=============================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --start-date 2025-06-15 --end-date 2025-06-16 --pattern *.ADM --save-filter custom --profile $CONFIG_PROFILE
+    
+    echo ""
+    echo -e "${BLUE}==========================================================${NC}"
+    echo -e "${BLUE}Running test: dayz-download-logs$: --create-common-filters${NC}"
+    echo -e "${BLUE}==========================================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --create-common-filters --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}===============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-download-logs --list-filters${NC}"
+    echo -e "${BLUE}===============================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --list-filters --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}============================================================${NC}"
+    echo -e "${BLUE}Running test: dayz-download-logs$ --filter-profile yesterday${NC}"
+    echo -e "${BLUE}============================================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --filter-profile yesterday --profile $CONFIG_PROFILE
+}
+
+# Test tools package
+test_tools() {
+    echo -e "\n${YELLOW}=== Testing Tools ===${NC}"
+
+    # Test duping detector help
+    echo ""
+    echo -e "${BLUE}==================================${NC}"
+    echo -e "${BLUE}Running test: dayz-duping-detector${NC}"
+    echo -e "${BLUE}==================================${NC}"
+    LOGLEVEL=INFO dayz-duping-detector --proximity-threshold 15 --time-threshold 120 --login-threshold 180 --login-count-threshold 2 --profile $CONFIG_PROFILE
+    
+    echo ""
+    # Test the kill tracker with actual date parameters (direct execution instead of using run_test)
+    echo -e "${BLUE}===============================${NC}"
+    echo -e "${BLUE}Running test: dayz-kill-tracker${NC}"
+    echo -e "${BLUE}===============================${NC}"
+    # Execute kill_tracker directly with correctly quoted date parameters
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-kill-tracker --start "2025-06-15 00:00:00" --end "2025-06-15 23:59:00" --profile $CONFIG_PROFILE --console
+
+    echo ""
+    echo -e "${BLUE}==================================${NC}"
+    echo -e "${BLUE}Running test: dayz-position-finder${NC}"
+    echo -e "${BLUE}==================================${NC}"
+    # Execute dayz-position-finder with correctly quoted date parameters
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-position-finder "*.ADM" --target_x 12153 --target_y 13731 --radius 100 --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}==================================${NC}"
+    echo -e "${BLUE}Running test: dayz-position-finder${NC}"
+    echo -e "${BLUE}==================================${NC}"
+    # Execute dayz-position-finder with correctly quoted date parameters
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-position-finder "*.ADM" --player "BIGGFISH35" --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}==================================${NC}"
+    echo -e "${BLUE}Running test: dayz-search-overtime${NC}"
+    echo -e "${BLUE}==================================${NC}"
+    # Execute dayz-position-finder with correctly quoted date parameters
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-search-overtime --profile $CONFIG_PROFILE
+}
+
+# Test XML tools
+test_xml_tools() {
+    echo -e "\n${YELLOW}=== Testing XML Types Tools ===${NC}"
+    
+    echo ""
+    echo -e "${BLUE}=================================${NC}"
+    echo -e "${BLUE}Running test: dayz-change-min-max${NC}"
+    echo -e "${BLUE}=================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-change-min-max --pattern "Ammo*" --quantmin 4 --quantmax 5 --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}===================================${NC}"
+    echo -e "${BLUE}Running test: dayz-check-usage-tags${NC}"
+    echo -e "${BLUE}===================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-check-usage-tags --profile $CONFIG_PROFILE
+
+    FILE1="/path/to/your/types.xml"
+    FILE2="/path/to/your/types.xml"
+    if [ -z "$FILE1" ] || [ -z "$FILE2" ]; then
+        echo -e "${RED}✗ Source or target types file not set${NC}"
+        echo -e "${YELLOW}Hint: Set FILE1 and FILE2 variables before running this test${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BLUE}================================${NC}"
+    echo -e "${BLUE}Running test: dayz-compare-types${NC}"
+    echo -e "${BLUE}================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-compare-types $FILE1 $FILE2 --profile $CONFIG_PROFILE
+
+    FILE1="/path/to/your/types.xml"
+    FILE2="/path/to/your/types.xml"
+    if [ ! -f "$FILE1" || [ -z "$FILE2" ] ]; then
+        echo -e "${RED}✗ Source types file not found: $FILE1${NC}"
+        echo -e "${YELLOW}Hint: Ensure the source types file exists before running this test${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BLUE}====================================${NC}"
+    echo -e "${BLUE}Running test: dayz-copy-types-values${NC}"
+    echo -e "${BLUE}====================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-copy-types-values --src_file $FILE1 --target_file $FILE2 --element "quantmin" --profile $CONFIG_PROFILE
+    
+    echo ""
+    echo -e "${BLUE}===============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-replace-usagevalue-tag-types${NC}"
+    echo -e "${BLUE}===============================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-replace-usagevalue-tag-types --src_file $FILE1 --target_file $FILE2 --profile $CONFIG_PROFILE
+    
+    echo ""
+    echo -e "${BLUE}===================================${NC}"
+    echo -e "${BLUE}Running test: dayz-sort-types-usage${NC}"
+    echo -e "${BLUE}===================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sort-types-usage --profile $CONFIG_PROFILE
+    
+    echo ""   
+    echo -e "${BLUE}==========================================${NC}"
+    echo -e "${BLUE}Running test: dayz-sum-staticbuilder-items${NC}"
+    echo -e "${BLUE}==========================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticbuilder-items --profile $CONFIG_PROFILE
+    
+    echo ""
+    echo -e "${BLUE}=========================================${NC}"
+    echo -e "${BLUE}Running test dayz-sum-staticmildrop-items${NC}"
+    echo -e "${BLUE}=========================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticmildrop-items --profile $CONFIG_PROFILE
+
+    REF_TYPES="/path/to/your/types.xml"
+    if [ ! -f "$REF_TYPES" ]; then
+        echo -e "${RED}✗ Reference types file not found: $REF_TYPES${NC}"
+        echo -e "${YELLOW}Hint: Ensure the reference types file exists before running this test${NC}"
+        return 1
+    fi
+    
+    echo ""
+    echo -e "${BLUE}====================================${NC}"
+    echo -e "${BLUE}Running test: dayz-sync-csv-to-types${NC}"
+    echo -e "${BLUE}====================================${NC}"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sync-csv-to-types output/sb_loot.csv output/md_loot.csv --reference $REF_TYPES --organize --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-types-to-excel --to-excel${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    # Ensure the output directory exists
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-types-to-excel --to-excel --profile $CONFIG_PROFILE
+
+    EXCEL="/path/to/your/types.xlsx"
+    if [ ! -f "$EXCEL" ]; then
+        echo -e "${RED}✗ Excel file not found: $EXCEL${NC}"
+        echo -e "${YELLOW}Hint: Ensure dayz-types-to-excel ran successfully${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-types-to-excel --to-xml${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    # Convert the Excel file back to XML
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-types-to-excel --to-xml --input $EXCEL --profile $CONFIG_PROFILE
+}
+
+# Test Proto XML tools
+test_proto_tools() {
+    echo -e "\n${YELLOW}=== Testing Proto XML Tools ===${NC}"
+
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: compare_merge_lootmax_proto.py${NC}"
+    echo -e "${BLUE}============================================${NC}"
+
+    FILE1="/path/to/your/types.xml/mapgroupproto.xml"
+    FILE2="/path/to/your/types.xml/mapgroupproto.xml"
+    if [ ! -f "$FILE1" ] || [ ! -f "$FILE2" ]; then
+        echo -e "${RED}✗ Source or target proto file not found: $FILE1 or $FILE2${NC}"
+        echo -e "${YELLOW}Hint: Ensure both proto files exist before running this test${NC}"
+        return 1
+    fi
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-compare-lootmax $FILE1 $FILE2 --merge --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}=======================================${NC}"
+    echo -e "${BLUE}Running test: deathmatch_config_tool.py${NC}"
+    echo -e "${BLUE}=======================================${NC}"
+
+    PROTO="/path/to/your/types.xml/mapgroupproto.xml"
+    POS="/path/to/your/types.xml/mapgrouppos.xml"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-deathmatch-config --mapgrouppos $POS --mapgroupproto $PROTO --ur-x 4658 --ur-y 12256 --ll-x 4588 --ll-y 8904 --profile $CONFIG_PROFILE
+}
+
+# Clean up generated files if needed
+clean_output() {
+    echo -e "\n${YELLOW}Cleaning up generated files...${NC}"
+    if [[ "$1" == "--keep" ]]; then
+        echo -e "${GREEN}Keeping output files in $SRC_DIR/../output for inspection${NC}"
+    else
+        # You can optionally clean up specific files if needed
+        # For now, we'll just inform the user that no cleanup is needed
+        echo -e "${GREEN}✓ Test completed - output files are in $SRC_DIR/../output${NC}"
+    fi
+    
+    # Force flushing all output to ensure the message is displayed
+    sync
+}
+
+# Main function
+main() {
+    # Parse arguments
+    local keep_files=""
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            --keep)
+                keep_files="--keep"
+                shift
+                ;;
+            *)
+                echo "Unknown option: $1"
+                exit 1
+                ;;
+        esac
+    done
+
+    # Verify input files exist
+    verify_input_files || { echo -e "${RED}Input file verification failed. Exiting.${NC}"; exit 1; }
+    
+    # Run tests
+    test_json_tools
+    test_log_tools
+    test_tools
+    test_xml_tools
+    test_proto_tools
+    
+    # Cleanup or notify about output
+    clean_output $keep_files
+    
+    # Add a longer delay and force output to ensure all logs are flushed
+    echo -e "${YELLOW}Finalizing tests...${NC}"
+    
+    # Print a highly visible success message
+    echo ""
+    echo -e "${GREEN}==================================================${NC}"
+    echo -e "${GREEN}||                                              ||${NC}"
+    echo -e "${GREEN}||        ALL TESTS COMPLETED SUCCESSFULLY!     ||${NC}"
+    echo -e "${GREEN}||                                              ||${NC}"
+    echo -e "${GREEN}==================================================${NC}"
+}
+
+# Run the main function
+main "$@"

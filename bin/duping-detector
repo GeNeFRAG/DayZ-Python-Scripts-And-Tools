@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Duping Detector Tool
+
+This is a wrapper script for the dayz_admin_tools.tools.duping_detector module.
+"""
+
+from dayz_admin_tools.tools.duping_detector import main
+
+if __name__ == '__main__':
+    main()

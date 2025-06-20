@@ -1,11 +1,48 @@
 data/
-src/tools/nitrado/nitrado_api.json
-**/*.xml
-**/*.json
-**/*.txt
-**/*.xlsx
-**/*.csv
-**/*.ADM
-**/*.RPT
+src/tools/
+src/config/secrets/
+!src/config/secrets/*.example
+!src/config/secrets/README.md
+test_tools.sh
 
-build_types_from_excel.sh
+# Python bytecode files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg
+*.egg-info/
+.eggs/
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv/
+
+# IDE specific files
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+.spyderproject
+.spyproject
+.ropeproject
+
+# OS specific files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs and outputs
+logs/
+output/
+backup/
+*.zip

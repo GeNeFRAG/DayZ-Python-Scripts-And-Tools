@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+DayZ Admin Tools - Check Usage Tags Tool
+
+This is a wrapper script for the dayz_admin_tools.xml.types.check_usage_tags module.
+"""
+
+from dayz_admin_tools.xml.types.check_usage_tags import main
+
+if __name__ == '__main__':
+    main()
