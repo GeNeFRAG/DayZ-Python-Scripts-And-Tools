@@ -1,8 +1,11 @@
 data/
 src/tools/
+src/config/profiles/
 src/config/secrets/
 !src/config/secrets/*.example
 !src/config/secrets/README.md
+!src/config/profiles/*.example
+!src/config/README.md
 test_tools.sh
 
 # Python bytecode files
