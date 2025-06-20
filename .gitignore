@@ -5,10 +5,12 @@ src/tools/
 src/config/profiles/*
 !src/config/profiles/*.example
 !src/config/profiles/README.md
+!src/config/profiles/.gitkeep
 
 src/config/secrets/*
 !src/config/secrets/*.example
 !src/config/secrets/README.md
+!src/config/secrets/.gitkeep
 
 # Include general config README
 !src/config/README.md
