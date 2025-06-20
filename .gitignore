@@ -1,11 +1,18 @@
 data/
 src/tools/
-src/config/profiles/
-src/config/secrets/
+
+# Config directories - ignore all files but keep specific ones
+src/config/profiles/*
+!src/config/profiles/*.example
+!src/config/profiles/README.md
+
+src/config/secrets/*
 !src/config/secrets/*.example
 !src/config/secrets/README.md
-!src/config/profiles/*.example
+
+# Include general config README
 !src/config/README.md
+
 test_tools.sh
 
 # Python bytecode files
