@@ -7,6 +7,7 @@ This module provides base classes used throughout the package.
 from abc import ABC, abstractmethod
 from typing import Dict, Any, Optional, List, Set, Tuple
 from collections import OrderedDict, Counter
+from datetime import datetime
 import logging
 import os
 from pathlib import Path
@@ -293,6 +294,45 @@ class FileBasedTool(DayZTool):
         
         logger.info(f"Results written to {resolved_path}")
         return resolved_path
+    
+    def generate_timestamped_filename(self, base_name: str, extension: str, prefix: str = "", suffix: str = "") -> str:
+        """
+        Generate a filename with a timestamp.
+        
+        Args:
+            base_name: The base name for the file
+            extension: File extension (without the dot)
+            prefix: Optional prefix to add before the timestamp
+            suffix: Optional suffix to add after the timestamp
+            
+        Returns:
+            A filename in the format: base_name_prefix_YYYYMMDD_HHMMSS_suffix.extension
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Handle prefix and suffix
+        prefix_str = f"{prefix}_" if prefix else ""
+        suffix_str = f"_{suffix}" if suffix else ""
+        
+        # Construct filename
+        filename = f"{base_name}_{prefix_str}{timestamp}{suffix_str}.{extension}"
+        
+        # Clean up double underscores or other formatting issues
+        filename = filename.replace("__", "_").replace("__", "_")
+        
+        return filename
+    
+    def get_timestamp_str(self, format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
+        """
+        Get a formatted timestamp string.
+        
+        Args:
+            format_str: The datetime format string (default: "%Y-%m-%d %H:%M:%S")
+            
+        Returns:
+            A timestamp string in the specified format
+        """
+        return datetime.now().strftime(format_str)
     
 class XMLTool(FileBasedTool):
     """Base class for tools that work with XML files."""

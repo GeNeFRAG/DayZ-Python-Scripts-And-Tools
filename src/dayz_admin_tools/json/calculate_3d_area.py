@@ -130,15 +130,17 @@ class Calculate3DArea(JSONTool):
             for k in range(num_boxes_z)
         ]
 
-        # Create output data
+        # Create output data with timestamp
         output_data = {
             "areaName": "Generated_3D_Area",
             "PRABoxes": boxes,
             "safePositions3D": []  # Add safe positions if needed
         }
 
-        # Save to output file in the configured output directory
-        output_filename = f"{Path(json_file).stem}_boxes.json"
+        # Save to output file in the configured output directory using generate_timestamped_filename
+        output_filename = self.generate_timestamped_filename(
+            f"{Path(json_file).stem}", "json", suffix="boxes"
+        )
         output_file = os.path.join(self.output_dir, output_filename)
         
         # Ensure the output directory exists
@@ -190,6 +192,7 @@ class Calculate3DArea(JSONTool):
 
         # Return a comprehensive result dictionary
         return {
+            'timestamp': self.get_timestamp_str(),
             'dimensions': {
                 'x': round(dimension_x, 2),
                 'y': round(dimension_y, 2),

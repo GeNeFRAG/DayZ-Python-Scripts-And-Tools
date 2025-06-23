@@ -10,7 +10,6 @@ import xml.etree.ElementTree as ET
 import json
 import argparse
 import os
-from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
 # Import base class and logger
@@ -145,9 +144,8 @@ class GenerateSpawnerEntries(JSONTool):
         # Prepare result structure
         result = {"Objects": []}
         
-        # Add timestamp
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        result["timestamp"] = timestamp
+        # Add timestamp using the base class utility method
+        result["timestamp"] = self.get_timestamp_str()
         
         # Convert ypr string to array of floats
         try:
@@ -192,9 +190,10 @@ class GenerateSpawnerEntries(JSONTool):
                 # Otherwise, put it in the output directory
                 target_file = os.path.join(self.output_dir, output_file)
         else:
-            # Generate default filename with timestamp if none provided
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            default_filename = f"spawner_entries_{timestamp}_{len(result['Objects'])}_items.json"
+            # Generate default filename with timestamp using the base class utility method
+            default_filename = self.generate_timestamped_filename(
+                "spawner_entries", "json", suffix=f"{len(result['Objects'])}_items"
+            )
             target_file = os.path.join(self.output_dir, default_filename)
         
         # Ensure output directory exists
