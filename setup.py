@@ -47,6 +47,7 @@ setup(
             "dayz-log-filter-profiles=dayz_admin_tools.log.log_filter_profiles:main",
             # Proto XML Tools
             "dayz-compare-lootmax=dayz_admin_tools.xml.proto.compare_merge_lootmax_proto:main",
+            "dayz-compare-missing-groups=dayz_admin_tools.xml.proto.compare_missing_groups:main",
             "dayz-deathmatch-config=dayz_admin_tools.xml.proto.deathmatch_config_tool:main",
         ],
     },

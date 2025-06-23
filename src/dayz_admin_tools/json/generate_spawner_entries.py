@@ -10,6 +10,7 @@ import xml.etree.ElementTree as ET
 import json
 import argparse
 import os
+from datetime import datetime
 from typing import Dict, Any, Optional, List, Tuple
 
 # Import base class and logger
@@ -41,7 +42,7 @@ class GenerateSpawnerEntries(JSONTool):
         self.valid_items = set()
     
     def run(self, types_xml_path: str, items: List[Tuple[str, int, List[float]]],
-            ypr: str = "0 0 0", scale: float = 1.0, 
+            ypr: str = "0.0, -0.0, -0.0", scale: float = 1.0, 
             enable_ce_persistence: int = 0, custom_string: str = "",
             output_file: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -119,7 +120,7 @@ class GenerateSpawnerEntries(JSONTool):
             raise
     
     def generate_entries(self, types_xml_path: str, items: List[Tuple[str, int, List[float]]],
-                        ypr: str = "0 0 0", scale: float = 1.0, 
+                        ypr: str = "0.0, -0.0, -0.0", scale: float = 1.0, 
                         enable_ce_persistence: int = 0, custom_string: str = "",
                         output_file: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -144,6 +145,22 @@ class GenerateSpawnerEntries(JSONTool):
         # Prepare result structure
         result = {"Objects": []}
         
+        # Add timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        result["timestamp"] = timestamp
+        
+        # Convert ypr string to array of floats
+        try:
+            ypr_values = [float(v.strip()) for v in ypr.split(',')]
+            if len(ypr_values) < 3:
+                # Use default values with negative zeros for missing values
+                default_ypr = [0.0, -0.0, -0.0]
+                ypr_values = ypr_values + default_ypr[len(ypr_values):]
+        except ValueError:
+            # Fallback to default values if parsing fails
+            logger.warning(f"Could not parse YPR values '{ypr}', using defaults")
+            ypr_values = [0.0, -0.0, -0.0]
+        
         # Process each item
         for name, amount, pos in items:
             if name not in self.valid_items:
@@ -152,7 +169,7 @@ class GenerateSpawnerEntries(JSONTool):
             obj = {
                 "name": name,
                 "pos": pos,
-                "ypr": ypr,
+                "ypr": ypr_values,
                 "scale": scale,
                 "enableCEPersistence": enable_ce_persistence,
             }
@@ -175,8 +192,9 @@ class GenerateSpawnerEntries(JSONTool):
                 # Otherwise, put it in the output directory
                 target_file = os.path.join(self.output_dir, output_file)
         else:
-            # Generate default filename if none provided
-            default_filename = f"spawner_entries_{len(result['Objects'])}_items.json"
+            # Generate default filename with timestamp if none provided
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"spawner_entries_{timestamp}_{len(result['Objects'])}_items.json"
             target_file = os.path.join(self.output_dir, default_filename)
         
         # Ensure output directory exists
@@ -230,7 +248,7 @@ def main():
     parser.add_argument("--types_xml", help="Path to types.xml (defaults to path.types_file from config)")
     parser.add_argument("items", nargs='+', type=parse_item_amount_pos, 
                       help="Item(s) in format <item>:<amount>:<x>:<y>:<z>")
-    parser.add_argument("--ypr", default="0 0 0", help="YPR (default: '0 0 0')")
+    parser.add_argument("--ypr", default="0.0, -0.0, -0.0", help="YPR as comma-separated values (default: '0.0, -0.0, -0.0')")
     parser.add_argument("--scale", type=float, default=1.0, help="Scale (default: 1.0)")
     parser.add_argument("--enableCEPersistence", type=int, default=0, 
                       help="enableCEPersistence (default: 0)")
