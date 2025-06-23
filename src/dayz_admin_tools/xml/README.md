@@ -13,4 +13,7 @@ This package leverages both standard `ElementTree` and `lxml` (if available) for
 The XML package is organized into submodules:
 
 - **proto/** - Tools for working with mapgroupproto.xml and related item configuration files
+  - Compare and merge lootmax values between files
+  - Configure deathmatch areas and settings
+  - Identify missing groups between mapgroupproto files
 - **types/** - Tools for working with types.xml and related item configuration files

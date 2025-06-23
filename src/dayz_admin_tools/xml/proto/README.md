@@ -86,6 +86,44 @@ dayz-deathmatch-config \
 - `--verbose, -v`: Enable verbose logging
 - `--config, -c`: Configuration profile to use
 
+### Missing Groups Comparer (`compare_missing_groups.py`)
+
+This tool compares two mapgroupproto.xml files and identifies groups that are missing in each file. It generates a comprehensive CSV report showing:
+
+- Common groups that exist in both files
+- Groups that are present in one file but missing in the other
+- Summary statistics about the comparison
+
+All output files include timestamps automatically and are stored in the directory specified by `general.output_path` in the configuration.
+
+**Usage:**
+```bash
+dayz-compare-missing-groups file1.xml file2.xml --output comparison.csv
+```
+
+**Arguments:**
+- `file1`: First mapgroupproto XML file
+- `file2`: Second mapgroupproto XML file
+- `--output, -o`: Filename for comparison output CSV (timestamp will be added automatically)
+- `--profile, -p`: Configuration profile to use (affects output paths)
+
+**Example Usage:**
+```bash
+# Compare two mapgroupproto files and generate a CSV report
+dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --output group_comparison.csv
+
+# Use a specific configuration profile
+dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --profile server_2
+```
+
+**Output Format:**
+The generated CSV file includes the following information:
+- Metadata (comparison date, file paths)
+- Summary statistics (total groups, common groups, missing groups)
+- List of common groups present in both files
+- List of groups missing in the first file
+- List of groups missing in the second file
+
 ## Configuration
 
 The tools use the DayZ Admin Tools configuration system. These are the configuration values used from `src/config/profiles/default.json`:

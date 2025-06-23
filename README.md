@@ -65,6 +65,7 @@ Configuration options are defined in `src/config/profiles/default.json`. You can
 
 - **Compare Lootmax**: Compare and merge lootmax values (`dayz-compare-lootmax`)
 - **Deathmatch Config**: Configure deathmatch settings (`dayz-deathmatch-config`)
+- **Compare Missing Groups**: Identify missing groups between mapgroupproto files (`dayz-compare-missing-groups`)
 
 ### Log Tools
 
@@ -100,6 +101,9 @@ dayz-types-to-excel --to-excel types.xml types.xlsx
 
 # Sort types.xml by usage categories
 dayz-sort-types-usage types.xml sorted_types.xml
+
+# Compare mapgroupproto files to find missing groups
+dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --output group_comparison.csv
 ```
 
 ### Log Analysis
