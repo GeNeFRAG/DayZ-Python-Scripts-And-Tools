@@ -55,5 +55,5 @@ Thumbs.db
 # Logs and outputs
 logs/
 output/
-backup/
+backups/
 *.zip
