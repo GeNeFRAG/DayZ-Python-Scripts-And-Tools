@@ -402,8 +402,7 @@ class CheckUsageTagsTool(XMLTool):
         
         # Generate default filename if not provided
         if not csv_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"usage_tags_check_{timestamp}.csv"
+            filename = self.generate_timestamped_filename("usage_tags_check", "csv")
             csv_file = filename
         
         # Prepare CSV data
@@ -475,8 +474,7 @@ class CheckUsageTagsTool(XMLTool):
         
         # Generate default filename if not provided
         if not csv_file:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"usage_tags_summary_{timestamp}.csv"
+            filename = self.generate_timestamped_filename("usage_tags_summary", "csv")
             csv_file = filename
             
         # Prepare summary data

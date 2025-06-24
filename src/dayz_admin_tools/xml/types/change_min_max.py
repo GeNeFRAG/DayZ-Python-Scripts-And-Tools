@@ -99,9 +99,9 @@ class ChangeMinMaxTool(XMLTool):
             from datetime import datetime
             import shutil
             
-            # Format backup filename
+            # Format backup filename using base class method
             source_path = Path(xml_file_abs)
-            backup_filename = f"{source_path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}{source_path.suffix}"
+            backup_filename = self.generate_timestamped_filename(source_path.stem, source_path.suffix.lstrip("."))
             backup_path = Path(self.backup_dir) / backup_filename
             
             # Ensure backup directory exists

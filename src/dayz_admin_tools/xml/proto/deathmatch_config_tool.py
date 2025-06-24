@@ -263,26 +263,7 @@ class DeathmatchConfigTool(XMLTool):
         logger.info(f"Filtered buildings output file: {self.filtered_pos_file}")
         logger.info(f"Final proto output file: {self.proto_output_file}")
 
-    def get_timestamped_filename(self, path: str) -> str:
-        """
-        Add a timestamp to a filename.
-        
-        Args:
-            path: Original file path
-            
-        Returns:
-            File path with timestamp added before extension
-        """
-        from datetime import datetime
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        
-        # Add timestamp before file extension
-        if '.' in os.path.basename(path):
-            name, ext = os.path.splitext(path)
-            return f"{name}_{timestamp}{ext}"
-        else:
-            # No extension found
-            return f"{path}_{timestamp}"
+    # Removed get_timestamped_filename method in favor of using the base class implementation
             
     def _get_output_path(self, path: str) -> str:
         """
@@ -298,14 +279,16 @@ class DeathmatchConfigTool(XMLTool):
         if path is None:
             return None
             
-        # Add timestamp to filename
-        timestamped_path = self.get_timestamped_filename(path)
+        # Add timestamp to filename using base class method
+        name, ext = os.path.splitext(os.path.basename(path))
+        timestamped_filename = self.generate_timestamped_filename(name, ext.lstrip("."))
         
-        if os.path.isabs(timestamped_path):
-            return self.resolve_path(timestamped_path)
+        if os.path.isabs(path):
+            # Keep the same directory for absolute paths
+            return self.resolve_path(os.path.join(os.path.dirname(path), timestamped_filename))
         else:
             # Relative path - put in output directory
-            return os.path.join(self.output_dir, timestamped_path)
+            return os.path.join(self.output_dir, timestamped_filename)
 
     def run(self) -> bool:
         """
