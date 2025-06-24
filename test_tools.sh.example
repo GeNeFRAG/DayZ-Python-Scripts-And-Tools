@@ -388,6 +388,15 @@ test_proto_tools() {
     PROTO="/path/to/your/types.xml/mapgroupproto.xml"
     POS="/path/to/your/types.xml/mapgrouppos.xml"
     PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-deathmatch-config --mapgrouppos $POS --mapgroupproto $PROTO --ur-x 4658 --ur-y 12256 --ll-x 4588 --ll-y 8904 --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-compare-missing-groups.py${NC}"
+    echo -e "${BLUE}============================================${NC}"
+
+    PROTO1="/path/to/your/mapgroupproto.xml"
+    PROTO2="//path/to/your/mapgroupproto.xml"
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-compare-missing-groups $PROTO1 $PROTO2 --profile $CONFIG_PROFILE
 }
 
 # Clean up generated files if needed
