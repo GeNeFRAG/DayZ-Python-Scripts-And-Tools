@@ -144,9 +144,6 @@ class GenerateSpawnerEntries(JSONTool):
         # Prepare result structure
         result = {"Objects": []}
         
-        # Add timestamp using the base class utility method
-        result["timestamp"] = self.get_timestamp_str()
-        
         # Convert ypr string to array of floats
         try:
             ypr_values = [float(v.strip()) for v in ypr.split(',')]
@@ -169,10 +166,10 @@ class GenerateSpawnerEntries(JSONTool):
                 "pos": pos,
                 "ypr": ypr_values,
                 "scale": scale,
-                "enableCEPersistence": enable_ce_persistence,
+                "enableCEPersistence": enable_ce_persistence
             }
             
-            if custom_string:
+            if custom_string == "":
                 obj["customString"] = custom_string
                 
             # Add the item multiple times based on amount
@@ -203,10 +200,12 @@ class GenerateSpawnerEntries(JSONTool):
         self.write_json(result, target_file, indent=2)
         logger.info(f"Output written to: {target_file}")
         
-        # Add the output file path to the result
-        result["output_file"] = target_file
+        # Create a separate result dictionary for the return value with metadata
+        return_result = result.copy()
+        return_result["output_file"] = target_file
+        return_result["timestamp"] = self.get_timestamp_str()  # Keep timestamp for logging only
         
-        return result
+        return return_result
 
 
 def parse_item_amount_pos(s: str) -> Tuple[str, int, List[float]]:
