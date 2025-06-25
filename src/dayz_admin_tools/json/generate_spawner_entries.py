@@ -120,7 +120,7 @@ class GenerateSpawnerEntries(JSONTool):
     
     def generate_entries(self, types_xml_path: str, items: List[Tuple[str, int, List[float]]],
                         ypr: str = "0.0, -0.0, -0.0", scale: float = 1.0, 
-                        enable_ce_persistence: int = 0, custom_string: str = "",
+                        enable_ce_persistency: int = 0, custom_string: str = "",
                         output_file: Optional[str] = None) -> Dict[str, Any]:
         """
         Generate object spawner entries from the provided items.
@@ -159,14 +159,15 @@ class GenerateSpawnerEntries(JSONTool):
         # Process each item
         for name, amount, pos in items:
             if name not in self.valid_items:
-                logger.warning(f"Item '{name}' not found in types.xml - adding anyway")
+                logger.warning(f"Item '{name}' not found in types.xml")
+                next
             
             obj = {
                 "name": name,
                 "pos": pos,
                 "ypr": ypr_values,
                 "scale": scale,
-                "enableCEPersistence": enable_ce_persistence
+                "enableCEPersistency": enable_ce_persistency
             }
             
             if custom_string == "":
