@@ -311,13 +311,12 @@ class DupingDetector(FileBasedTool):
             login_count_threshold
         )
         
-        # Generate timestamp for filenames and report
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate timestamp for report
         current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Write results to CSV files in the output directory
-        activities_file = f"suspicious_activities_{timestamp}.csv"
-        logins_file = f"suspicious_logins_{timestamp}.csv"
+        # Write results to CSV files in the output directory using base class method
+        activities_file = self.generate_timestamped_filename("suspicious_activities", "csv")
+        logins_file = self.generate_timestamped_filename("suspicious_logins", "csv")
         
         # Use self.write_csv which handles output directory and headers
         if suspicious_activities:

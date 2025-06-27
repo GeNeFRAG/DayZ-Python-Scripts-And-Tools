@@ -230,9 +230,8 @@ class CompareTypesTool(XMLTool):
             
             # Generate default output path if not specified
             if not output_csv:
-                # Add timestamp to the output file name
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                base_name = f"types_comparison_{Path(file1).stem}_{Path(file2).stem}_{timestamp}.csv"
+                # Create a filename with timestamp using base method
+                base_name = self.generate_timestamped_filename(f"types_comparison_{Path(file1).stem}_{Path(file2).stem}", "csv")
                 # Use the standard output path from the general.output_path config
                 output_dir = self.get_config('general.output_path', self.output_dir)
                 output_csv = os.path.join(output_dir, base_name)
@@ -295,8 +294,7 @@ def main():
     output_path = None
     if args.output_dir:
         # If output dir is specified, generate a filename with timestamp in that directory
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        base_name = f"types_comparison_{Path(args.types_xml1).stem}_{Path(args.types_xml2).stem}_{timestamp}.csv"
+        base_name = tool.generate_timestamped_filename(f"types_comparison_{Path(args.types_xml1).stem}_{Path(args.types_xml2).stem}", "csv")
         output_path = os.path.join(args.output_dir, base_name)
     
     # Run the tool

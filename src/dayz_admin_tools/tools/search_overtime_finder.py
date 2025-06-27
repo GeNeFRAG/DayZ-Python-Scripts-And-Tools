@@ -124,14 +124,13 @@ class SearchOvertimeFinder(FileBasedTool):
         Returns:
             Dictionary with paths to the generated CSV files.
         """
-        # Generate timestamp for filenames and report
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate timestamp for report
         current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
         outputs = {}
         
         # Export search overtime items
-        overtime_file = f"{prefix}_overtime_{timestamp}.csv"
+        overtime_file = self.generate_timestamped_filename(f"{prefix}_overtime", "csv")
         if results['overtime']:
             # Convert set to list of dictionaries for CSV export
             overtime_data = []
@@ -154,7 +153,7 @@ class SearchOvertimeFinder(FileBasedTool):
             logger.info(f"Search overtime results saved to: {overtime_file} (timestamp: {current_timestamp})")
         
         # Export hard to place items
-        hard_place_file = f"{prefix}_hard_to_place_{timestamp}.csv"
+        hard_place_file = self.generate_timestamped_filename(f"{prefix}_hard_to_place", "csv")
         if results['hard_to_place']:
             # Convert set to list of dictionaries for CSV export
             hard_place_data = []

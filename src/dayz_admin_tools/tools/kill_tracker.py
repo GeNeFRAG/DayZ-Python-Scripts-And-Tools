@@ -191,12 +191,11 @@ class KillTracker(FileBasedTool):
         Returns:
             Path to the saved CSV file
         """
-        # Generate current timestamp for the filename and data
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate current timestamp for data and filename
         current_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Create CSV filename with timestamp
-        output_file = f"kill_tracker_{timestamp}.csv"
+        # Create CSV filename with timestamp using base class method
+        output_file = self.generate_timestamped_filename("kill_tracker", "csv")
         
         # Prepare data for CSV
         data = []

@@ -368,9 +368,9 @@ class PositionFinder(FileBasedTool):
         os.makedirs(self.resolve_path(self.output_dir), exist_ok=True)
 
         # Add timestamp to output filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename, extension = os.path.splitext(args.output)
-        timestamped_filename = f"{filename}_{timestamp}{extension}"
+        extension = extension.lstrip('.')  # Remove leading dot
+        timestamped_filename = self.generate_timestamped_filename(filename, extension)
         
         # Build output file path
         output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
