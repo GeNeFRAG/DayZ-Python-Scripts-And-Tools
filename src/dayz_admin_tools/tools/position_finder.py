@@ -30,6 +30,9 @@ class PositionFinder(FileBasedTool):
         """
         super().__init__(config)
         self.initialize_directories()
+        # Get default patterns from config but only use *.ADM pattern
+        config_patterns = self.get_config('log_filtering.default_patterns', ["*.RPT", "*.ADM"])
+        self.default_pattern = "*.ADM"  # Always use *.ADM pattern regardless of config
     
     def _extract_info(self, line: str, file_date: str) -> Tuple[Optional[str], Optional[str], Optional[tuple], Optional[str]]:
         """
@@ -121,12 +124,12 @@ class PositionFinder(FileBasedTool):
         """
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
-    def find_nearby_positions(self, file_pattern: str, target_x: float, target_y: float, radius: float = 100.0) -> List[tuple]:
+    def find_nearby_positions(self, file_pattern: Optional[str] = None, target_x: float = 0.0, target_y: float = 0.0, radius: float = 100.0) -> List[tuple]:
         """
         Find positions within specified radius of target coordinates in multiple files
         
         Args:
-            file_pattern: File pattern to search (e.g. "*.ADM")
+            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
             target_x: Target X coordinate
             target_y: Target Y coordinate
             radius: Search radius in meters
@@ -136,16 +139,21 @@ class PositionFinder(FileBasedTool):
         """
         nearby_positions = []
         
-        # If file_pattern doesn't include a path, use the log_dir from config
-        if not os.path.dirname(file_pattern):
-            file_pattern = os.path.join(self.resolve_path(self.log_dir), file_pattern)
+        # Use provided pattern or default to *.ADM
+        pattern_to_use = file_pattern if file_pattern else self.default_pattern
+        logger.info(f"Using file pattern: {pattern_to_use}")
         
-        matching_files = glob.glob(file_pattern)
+        # If pattern doesn't include a path, use the log_dir from config
+        pattern = pattern_to_use
+        if not os.path.dirname(pattern):
+            pattern = os.path.join(self.resolve_path(self.log_dir), pattern)
+            
+        matching_files = glob.glob(pattern)
         
         if not matching_files:
-            logger.warning(f"No files found matching pattern: {file_pattern}")
+            logger.warning(f"No files found matching pattern: {pattern}")
             return nearby_positions
-            
+                
         logger.info(f"Searching {len(matching_files)} files for positions within {radius}m of ({target_x}, {target_y})")
         
         for file_path in matching_files:
@@ -173,15 +181,15 @@ class PositionFinder(FileBasedTool):
                                 ))
             except Exception as e:
                 logger.error(f"Error processing file {file_path}: {str(e)}")
-                
+                    
         return sorted(nearby_positions, key=lambda x: x[7])  # Sort by distance
 
-    def find_positions_by_player(self, file_pattern: str, player_name_filter: str) -> List[tuple]:
+    def find_positions_by_player(self, file_pattern: Optional[str] = None, player_name_filter: str = "") -> List[tuple]:
         """
         Find positions and actions for a specific player in multiple files
         
         Args:
-            file_pattern: File pattern to search (e.g. "*.ADM")
+            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
             player_name_filter: Player name to filter by
         
         Returns:
@@ -189,14 +197,19 @@ class PositionFinder(FileBasedTool):
         """
         player_positions = []
         
-        # If file_pattern doesn't include a path, use the log_dir from config
-        if not os.path.dirname(file_pattern):
-            file_pattern = os.path.join(self.resolve_path(self.log_dir), file_pattern)
+        # Use provided pattern or default to *.ADM
+        pattern_to_use = file_pattern if file_pattern else self.default_pattern
+        logger.info(f"Using file pattern: {pattern_to_use}")
         
-        matching_files = glob.glob(file_pattern)
+        # If pattern doesn't include a path, use the log_dir from config
+        pattern = pattern_to_use
+        if not os.path.dirname(pattern):
+            pattern = os.path.join(self.resolve_path(self.log_dir), pattern)
+            
+        matching_files = glob.glob(pattern)
         
         if not matching_files:
-            logger.warning(f"No files found matching pattern: {file_pattern}")
+            logger.warning(f"No files found matching pattern: {pattern}")
             return player_positions
             
         logger.info(f"Searching {len(matching_files)} files for player: {player_name_filter}")
@@ -221,7 +234,7 @@ class PositionFinder(FileBasedTool):
                             ))
             except Exception as e:
                 logger.error(f"Error processing file {file_path}: {str(e)}")
-                
+                    
         return player_positions
 
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
@@ -412,20 +425,23 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  # Find positions near coordinates
-  dayz-position-finder "*.ADM" --target_x 7500 --target_y 8500 --radius 100
+  # Find positions near coordinates using default *.ADM pattern
+  dayz-position-finder --target_x 7500 --target_y 8500 --radius 100
+  
+  # Find positions near coordinates with specific file pattern
+  dayz-position-finder --file_pattern "*.ADM" --target_x 7500 --target_y 8500 --radius 100
   
   # Find positions for a specific player
-  dayz-position-finder "*.ADM" --player "SurvivorName"
+  dayz-position-finder --player "SurvivorName"
   
   # Filter by date range and use specific output file
-  dayz-position-finder "*.ADM" --player "SurvivorName" --start-date 2023-06-01 --end-date 2023-06-30 --output player_positions.csv
+  dayz-position-finder --player "SurvivorName" --start-date 2023-06-01 --end-date 2023-06-30 --output player_positions.csv
   
   # Use configuration profile
-  dayz-position-finder --profile myserver "*.ADM" --target_x 7500 --target_y 8500
+  dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
 ''')
     
-    parser.add_argument('file_pattern', help='File pattern to search (e.g. "*.ADM"). If no directory is specified, the log directory from configuration is used.')
+    parser.add_argument('--file_pattern', help='File pattern to search (e.g. "*.ADM"). If not specified, the default "*.ADM" pattern will be used.')
     parser.add_argument('--target_x', type=float, help='Target X coordinate for location-based search')
     parser.add_argument('--target_y', type=float, help='Target Y coordinate for location-based search')
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
@@ -434,10 +450,18 @@ Examples:
     parser.add_argument('--start-date', help='Start date in YYYY-MM-DD format')
     parser.add_argument('--end-date', help='End date in YYYY-MM-DD format')
     
+    # For backward compatibility
+    parser.add_argument('file_pattern_pos', nargs='?', help='File pattern (positional argument, deprecated)')
+    
     # Add standard arguments from DayZTool
     DayZTool.add_standard_arguments(parser)
     
     args = parser.parse_args()
+    
+    # Handle backward compatibility for positional argument
+    if args.file_pattern_pos and not args.file_pattern:
+        args.file_pattern = args.file_pattern_pos
+        logger.warning("Using positional file pattern argument is deprecated. Please use --file_pattern instead.")
     
     # Load configuration
     config = PositionFinder.load_config(args.profile)
