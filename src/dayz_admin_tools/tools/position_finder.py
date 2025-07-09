@@ -124,6 +124,79 @@ class PositionFinder(FileBasedTool):
         """
         return math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2)
 
+    def _get_matching_files(self, file_pattern: Optional[str] = None) -> List[str]:
+        """
+        Get list of files matching the specified pattern
+        
+        Args:
+            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
+            
+        Returns:
+            List of file paths matching the pattern
+        """
+        # Use provided pattern or default to *.ADM
+        pattern_to_use = file_pattern if file_pattern else self.default_pattern
+        logger.info(f"Using file pattern: {pattern_to_use}")
+        
+        # If pattern doesn't include a path, use the log_dir from config
+        pattern = pattern_to_use
+        if not os.path.dirname(pattern):
+            pattern = os.path.join(self.resolve_path(self.log_dir), pattern)
+            
+        matching_files = glob.glob(pattern)
+        
+        if not matching_files:
+            logger.warning(f"No files found matching pattern: {pattern}")
+            
+        return matching_files
+
+    def _process_files(self, file_pattern: Optional[str], line_processor_func, description: str) -> List[tuple]:
+        """
+        Process log files with a custom line processor function
+        
+        Args:
+            file_pattern: File pattern to search
+            line_processor_func: Function to process each line (returns tuple or None)
+            description: Description for logging
+            
+        Returns:
+            List of processed results
+        """
+        matching_files = self._get_matching_files(file_pattern)
+        
+        if not matching_files:
+            return []
+            
+        logger.info(f"Searching {len(matching_files)} files for {description}")
+        
+        results = []
+        for file_path in matching_files:
+            try:
+                file_date = self._extract_date_from_file(file_path)
+                
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    for line_num, line in enumerate(file, 1):
+                        time_str, player_name, coords, action = self._extract_info(line, file_date)
+                        
+                        # Call the custom processor function
+                        result = line_processor_func(
+                            os.path.basename(file_path),
+                            line_num,
+                            file_date,
+                            time_str,
+                            player_name,
+                            coords,
+                            action
+                        )
+                        
+                        if result is not None:
+                            results.append(result)
+                            
+            except Exception as e:
+                logger.error(f"Error processing file {file_path}: {str(e)}")
+                    
+        return results
+
     def find_nearby_positions(self, file_pattern: Optional[str] = None, target_x: float = 0.0, target_y: float = 0.0, radius: float = 100.0) -> List[tuple]:
         """
         Find positions within specified radius of target coordinates in multiple files
@@ -137,52 +210,23 @@ class PositionFinder(FileBasedTool):
         Returns:
             List of tuples containing position information
         """
-        nearby_positions = []
-        
-        # Use provided pattern or default to *.ADM
-        pattern_to_use = file_pattern if file_pattern else self.default_pattern
-        logger.info(f"Using file pattern: {pattern_to_use}")
-        
-        # If pattern doesn't include a path, use the log_dir from config
-        pattern = pattern_to_use
-        if not os.path.dirname(pattern):
-            pattern = os.path.join(self.resolve_path(self.log_dir), pattern)
-            
-        matching_files = glob.glob(pattern)
-        
-        if not matching_files:
-            logger.warning(f"No files found matching pattern: {pattern}")
-            return nearby_positions
+        def process_nearby_line(filename, line_num, file_date, time_str, player_name, coords, action):
+            """Process line for nearby position search"""
+            if coords:
+                x, y, z = coords
+                distance = self._calculate_distance(target_x, target_y, x, y)
                 
-        logger.info(f"Searching {len(matching_files)} files for positions within {radius}m of ({target_x}, {target_y})")
+                if distance <= radius:
+                    return (filename, line_num, file_date, time_str, player_name, coords, action, distance)
+            return None
         
-        for file_path in matching_files:
-            try:
-                file_date = self._extract_date_from_file(file_path)
-                
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    for line_num, line in enumerate(file, 1):
-                        time_str, player_name, coords, action = self._extract_info(line, file_date)
-                        
-                        if coords:
-                            x, y, z = coords
-                            distance = self._calculate_distance(target_x, target_y, x, y)
-                            
-                            if distance <= radius:
-                                nearby_positions.append((
-                                    os.path.basename(file_path),
-                                    line_num,
-                                    file_date,
-                                    time_str,
-                                    player_name,
-                                    coords,
-                                    action,
-                                    distance
-                                ))
-            except Exception as e:
-                logger.error(f"Error processing file {file_path}: {str(e)}")
-                    
-        return sorted(nearby_positions, key=lambda x: x[7])  # Sort by distance
+        results = self._process_files(
+            file_pattern,
+            process_nearby_line,
+            f"positions within {radius}m of ({target_x}, {target_y})"
+        )
+        
+        return sorted(results, key=lambda x: x[7])  # Sort by distance
 
     def find_positions_by_player(self, file_pattern: Optional[str] = None, player_name_filter: str = "") -> List[tuple]:
         """
@@ -195,47 +239,17 @@ class PositionFinder(FileBasedTool):
         Returns:
             List of tuples containing file details and player actions
         """
-        player_positions = []
+        def process_player_line(filename, line_num, file_date, time_str, player_name, coords, action):
+            """Process line for player search"""
+            if player_name and player_name_filter.lower() in player_name.lower():
+                return (filename, line_num, file_date, time_str, player_name, coords, action)
+            return None
         
-        # Use provided pattern or default to *.ADM
-        pattern_to_use = file_pattern if file_pattern else self.default_pattern
-        logger.info(f"Using file pattern: {pattern_to_use}")
-        
-        # If pattern doesn't include a path, use the log_dir from config
-        pattern = pattern_to_use
-        if not os.path.dirname(pattern):
-            pattern = os.path.join(self.resolve_path(self.log_dir), pattern)
-            
-        matching_files = glob.glob(pattern)
-        
-        if not matching_files:
-            logger.warning(f"No files found matching pattern: {pattern}")
-            return player_positions
-            
-        logger.info(f"Searching {len(matching_files)} files for player: {player_name_filter}")
-        
-        for file_path in matching_files:
-            try:
-                file_date = self._extract_date_from_file(file_path)
-                
-                with open(file_path, 'r', encoding='utf-8') as file:
-                    for line_num, line in enumerate(file, 1):
-                        time_str, player_name, coords, action = self._extract_info(line, file_date)
-                        
-                        if player_name and player_name_filter.lower() in player_name.lower():
-                            player_positions.append((
-                                os.path.basename(file_path),
-                                line_num,
-                                file_date,
-                                time_str,
-                                player_name,
-                                coords,
-                                action
-                            ))
-            except Exception as e:
-                logger.error(f"Error processing file {file_path}: {str(e)}")
-                    
-        return player_positions
+        return self._process_files(
+            file_pattern,
+            process_player_line,
+            f"player: {player_name_filter}"
+        )
 
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
         """
