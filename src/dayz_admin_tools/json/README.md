@@ -28,19 +28,36 @@ Calculates the dimensions, area, and volume of a 3D space occupied by objects in
 **Usage**:
 ```bash
 # Basic usage with default options
-dayz-calculate-3d-area input.json --output results.json
+dayz-calculate-3d-area input.json --max-box-size 50
 
-# Advanced usage with box size options
-dayz-calculate-3d-area input.json --output results.json --max-box-size 75 --profile my_profile
+# With custom box size and profile
+dayz-calculate-3d-area input.json --max-box-size 75 --profile myserver
+
+# Enable detailed console output
+dayz-calculate-3d-area input.json --console
 ```
+
+**Parameters**:
+- `json_file`: Path to the JSON file containing object positions (required)
+- `--max-box-size`: Maximum box size to consider for optimization (optional, default: 50)
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
 
 **Python API**:
 ```python
-from dayz_admin_tools.json import Calculate3DArea
+from dayz_admin_tools.json.calculate_3d_area import Calculate3DArea
 
+# Load configuration
+config = Calculate3DArea.load_config("myserver")  # or None for default
 calculator = Calculate3DArea(config)
+
+# Calculate area with custom box size
 results = calculator.run("input.json", max_box_size=50)
-print(f"Area dimensions: {results['width']} x {results['length']} x {results['height']}")
+
+# Access results
+print(f"Dimensions: {results['dimensions']['x']} x {results['dimensions']['y']} x {results['dimensions']['z']}")
+print(f"Volume: {results['volume']} cubic units")
+print(f"Optimal box size: {results['optimal_box']['dimensions']}")
 ```
 
 ### Generate Spawner Entries
@@ -63,19 +80,47 @@ Creates DayZ object spawner JSON entries from specifications. Takes item names, 
 dayz-generate-spawner-entries "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
 
 # With types.xml validation and custom orientation
-dayz-generate-spawner-entries --types-xml types.xml "Land_Wreck_Ikarus:1:7500:300:7600:90:0:0" --output wrecks.json
+dayz-generate-spawner-entries --types_xml types.xml "Land_Wreck_Ikarus:1:7500:300:7600" --ypr "90,0,0" --output wrecks.json
+
+# With custom settings and printing to stdout
+dayz-generate-spawner-entries "Barrel_Green:1:7500:300:7600" --scale 1.5 --enableCEPersistence 1 --customString "mymod" --print
+
+# Use configured types.xml path
+dayz-generate-spawner-entries --profile myserver "AKM:3:7500:300:7600"
 ```
+
+**Parameters**:
+- `items`: Item(s) in format `<item>:<amount>:<x>:<y>:<z>` (required, can specify multiple)
+- `--types_xml`: Path to types.xml (optional, uses `paths.types_file` from config if not specified)
+- `--ypr`: YPR (yaw, pitch, roll) as comma-separated values (optional, default: "0.0, -0.0, -0.0")
+- `--scale`: Scale factor for objects (optional, default: 1.0)
+- `--enableCEPersistence`: Enable Central Economy persistence (optional, default: 0)
+- `--customString`: Custom string attribute (optional, default: empty)
+- `--output, -o`: Output file (optional, uses default filename in output directory if not specified)
+- `--print`: Print the generated JSON to stdout (optional)
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
 
 **Python API**:
 ```python
-from dayz_admin_tools.json import GenerateSpawnerEntries
+from dayz_admin_tools.json.generate_spawner_entries import GenerateSpawnerEntries
 
+# Load configuration
+config = GenerateSpawnerEntries.load_config("myserver")
 generator = GenerateSpawnerEntries(config)
+
+# Generate entries with custom parameters
 entries = generator.run(
-    item_specs=["Barrel_Green:2:7500:300:7600", "AKM:5:7510:300:7610"],
-    types_xml="types.xml"
+    types_xml="types.xml",
+    items=["Barrel_Green:2:7500:300:7600", "AKM:5:7510:300:7610"],
+    ypr="0.0, -0.0, -0.0",
+    scale=1.0,
+    enable_ce_persistence=0,
+    custom_string="",
+    output_file="spawner.json",
+    print_output=False
 )
-# Process or save entries
+print(f"Generated {len(entries)} spawner entries")
 ```
 
 ### Sum Items JSON
@@ -94,24 +139,45 @@ Analyzes and aggregates item counts across multiple JSON files. Useful for serve
 
 **Usage**:
 ```bash
-# Basic usage
-dayz-sum-items-json output.csv file1.json file2.json file3.json
+# Basic usage with output file
+dayz-sum-items-json --output inventory.csv file1.json file2.json file3.json
 
-# With filtering options
-dayz-sum-items-json output.csv --include-static --sort-by frequency *.json
+# Use wildcard patterns and custom types.xml
+dayz-sum-items-json --types-xml custom_types.xml --output results.csv *.json
+
+# Use configured paths
+dayz-sum-items-json --profile myserver area1.json area2.json
+
+# Process files with default output filename
+dayz-sum-items-json file1.json file2.json
 ```
+
+**Parameters**:
+- `json_files`: JSON files to process (required, can specify multiple files or use wildcards)
+- `--output, -o`: Path to the output CSV file (optional, generates default name in output directory if not specified)
+- `--types-xml, -t`: Path to types.xml file for item validation (optional, uses `paths.types_file` from config if not specified)
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
 
 **Python API**:
 ```python
-from dayz_admin_tools.json import SumItemsJson
+from dayz_admin_tools.json.sum_items_json import SumItemsJson
 
+# Load configuration
+config = SumItemsJson.load_config("myserver")
 counter = SumItemsJson(config)
+
+# Process files and generate CSV
 results = counter.run(
-    input_files=["area1.json", "area2.json"], 
-    output_file="inventory.csv",
-    include_static=True
+    json_files=["area1.json", "area2.json"], 
+    output_csv="inventory.csv",
+    types_xml="types.xml"
 )
+
+# Access results - returns dict with item counts and validation info
 print(f"Found {len(results)} unique items")
+valid_items = sum(1 for info in results.values() if info['valid'])
+print(f"Valid items: {valid_items}")
 ```
 
 ### Split Loot Structures
@@ -130,32 +196,61 @@ Separates DayZ JSON objects into loot items and structures based on types.xml cl
 
 **Usage**:
 ```bash
-# Basic usage
+# Basic usage with required parameters
 dayz-split-loot-structures --types-xml types.xml --input-json objects.json
 
-# With custom options
-dayz-split-loot-structures --types-xml types.xml --input-json objects.json --loot-json loot.json --structures-json structures.json --profile my_profile
+# With custom output files
+dayz-split-loot-structures --types-xml types.xml --input-json objects.json --loot-json loot.json --structures-json structures.json
+
+# Use configured types.xml path
+dayz-split-loot-structures --input-json my_bigcustom.json --profile myserver
+
+# With detailed console output
+dayz-split-loot-structures --types-xml types.xml --input-json objects.json --console
 ```
+
+**Parameters**:
+- `--input-json`: Input JSON file with objects (required)
+- `--types-xml`: Path to types.xml (optional, uses `paths.types_file` from config if not specified)
+- `--loot-json`: Output JSON file for loot objects (optional, uses default path in output directory if not specified)
+- `--structures-json`: Output JSON file for structure objects (optional, uses default path in output directory if not specified)
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
 
 **Python API**:
 ```python
-from dayz_admin_tools.json import SplitLootStructures
+from dayz_admin_tools.json.split_loot_structures import SplitLootStructures
 
+# Load configuration
+config = SplitLootStructures.load_config("myserver")
 splitter = SplitLootStructures(config)
+
+# Split objects into loot and structures
 results = splitter.run(
     types_xml="types.xml",
     input_json="my_bigcustom.json",
     loot_json="my_bigcustom_loot.json",
     structures_json="my_bigcustom_structures.json"
 )
-print(f"Split {results['total']} objects into {results['loot_count']} loot items and {results['structure_count']} structures")
+
+print(f"Split {results['total_objects']} objects:")
+print(f"  - {results['loot_count']} loot items")
+print(f"  - {results['structure_count']} structures")
+print(f"  - {results['unknown_count']} unknown items")
 ```
 
 ## Configuration
 
 All tools use the central configuration system from the `Config` class. You can specify a configuration profile with the `--profile` argument for any command.
 
-**Configuration Structure**:
+### Common Parameters
+
+All JSON tools support these standard command-line parameters:
+
+- `--profile`: Configuration profile to use (optional, uses default profile if not specified)
+- `--console`: Log detailed output summary in addition to regular logging (optional)
+
+### Configuration Structure
 ```json
 {
   "general": {
