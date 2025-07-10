@@ -2,6 +2,8 @@
 
 This package provides a generic wrapper for the Nitrado API, allowing interactions with Nitrado-hosted DayZ servers for file operations and other basic functionalities.
 
+**Note**: This module is a pure library component and does not provide any command-line tools. It serves as the foundation API client for other modules (like the Log module) that need to interact with Nitrado servers.
+
 ## Components
 
 ### API Client (`api_client.py`)
@@ -13,13 +15,13 @@ The `NitradoAPIClient` class provides a clean, generic interface for interacting
 
 The client is designed to be a minimal wrapper around the Nitrado API, providing core functionality that can be used by higher-level modules.
 
+### Python API Usage
+
 ```python
 from dayz_admin_tools.nitrado.api_client import NitradoAPIClient
-from dayz_admin_tools.config.config import Config
 
 # Load configuration with API credentials
-config_obj = Config(profile='my_profile')
-config = config_obj.get()
+config = NitradoAPIClient.load_config('my_profile')  # or None for default
 
 # Initialize the API client
 client = NitradoAPIClient(config)
@@ -38,23 +40,26 @@ with open('local_server.cfg', 'wb') as f:
 client.upload_file('local_types.xml', '/games/12345/ftproot/dayzxb/mpmissions/dayzOffline.chernarusplus/db/types.xml')
 ```
 
+**Available Methods**:
+- `list_files(directory_path)`: List files in a remote directory
+- `download_file(remote_path)`: Download a file and return its content as bytes
+- `upload_file(local_path, remote_path)`: Upload a local file to the remote server
+
 ## Integration with Log Downloader
 
 The API client is used by the `NitradoLogDownloader` class (in the `log` package) for downloading server logs:
 
 ```python
 from dayz_admin_tools.log.log_downloader import NitradoLogDownloader
-from dayz_admin_tools.config.config import Config
 
 # Load configuration with API credentials
-config_obj = Config(profile='my_profile')
-config = config_obj.get()
+config = NitradoLogDownloader.load_config('my_profile')  # or None for default
 
-# Initialize the log downloader
+# Initialize the log downloader (which uses NitradoAPIClient internally)
 downloader = NitradoLogDownloader(config)
 
 # Download logs using various filtering options
-downloader.run(
+result = downloader.run(
     output_dir="./logs",
     start_date="2025-05-01",
     end_date="2025-05-31",
@@ -63,6 +68,16 @@ downloader.run(
 ```
 
 For log-specific functionality, please refer to the documentation in the `log` package.
+
+## Command-Line Interface
+
+**This module does not provide any command-line tools.** The Nitrado API client is designed as a pure library component that other modules can use programmatically. 
+
+For command-line functionality that uses the Nitrado API, see:
+- **Log Module**: `dayz-download-logs` command for downloading server logs
+- **Other modules**: May use this API client internally for their specific functionality
+
+If you need to interact with the Nitrado API from the command line, consider using the tools in other modules that are built on top of this API client.
 
 ## Configuration
 
