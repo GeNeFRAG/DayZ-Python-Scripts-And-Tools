@@ -8,32 +8,40 @@ This package provides tools for working with DayZ proto XML files, specifically:
 
 ### Lootmax Comparer (`compare_merge_lootmax_proto.py`)
 
+**CLI Command**: `dayz-compare-lootmax`
+
 This tool compares and optionally merges lootmax values between two mapgroupproto.xml files.
 
 **Usage:**
 ```bash
-dayz-compare-lootmax file1.xml file2.xml --output comparison.txt --merge merged.xml
+# Basic comparison
+dayz-compare-lootmax file1.xml file2.xml --output comparison.csv
+
+# Compare and merge with custom filename
+dayz-compare-lootmax file1.xml file2.xml --merge merged.xml
+
+# Compare and merge with default filename
+dayz-compare-lootmax file1.xml file2.xml --merge
+
+# Use specific configuration profile
+dayz-compare-lootmax file1.xml file2.xml --profile myserver --output comparison.csv
 ```
 
-**Arguments:**
-- `file1`: First proto XML file
-- `file2`: Second proto XML file
-- `--output, -o`: Filename for comparison output (saved to general.output_path)
-- `--merge, -m`: Enable merging and optionally provide a filename (defaults to merged_mapgroupproto.xml)
-- `--config, -c`: Configuration profile to use (affects output paths)
-
-**Example Usage:**
-```bash
-# Compare two proto files and save the comparison
-dayz-compare-lootmax vanilla_proto.xml custom_proto.xml --output loot_comparison.txt
-
-# Compare and merge, taking higher lootmax values
-dayz-compare-lootmax vanilla_proto.xml custom_proto.xml --merge enhanced_proto.xml
-```
+**Parameters:**
+| Parameter | Short | Required | Default | Description |
+|-----------|-------|----------|---------|-------------|
+| `file1` | - | Yes | - | First proto XML file |
+| `file2` | - | Yes | - | Second proto XML file |
+| `--output` | `-o` | No | `lootmax_comparison.csv` | Filename for comparison output (timestamp added automatically) |
+| `--merge` | `-m` | No | - | Enable merging and optionally provide a filename (defaults to `merged_mapgroupproto.xml` with timestamp if no filename provided) |
+| `--profile` | - | No | default | Configuration profile to use |
+| `--console` | - | No | - | Log detailed output summary |
 
 
 
 ### Deathmatch Configuration Tool (`deathmatch_config_tool.py`)
+
+**CLI Command**: `dayz-deathmatch-config`
 
 This simplified tool creates DayZ Deathmatch server configurations in a single operation by:
 1. Filtering buildings within a specific coordinate box
@@ -44,49 +52,45 @@ All output files are stored in the directory specified by `general.output_path` 
 
 **Usage:**
 ```bash
-dayz-deathmatch-config \
-    --mapgrouppos=/path/to/mapgrouppos.xml \
-    --mapgroupproto=/path/to/mapgroupproto.xml \
-    --ur-x 1000 --ur-y 1000 --ll-x 500 --ll-y 500 \
-    --usage-tag Deathmatch
-```
+# Basic usage with required coordinates
+dayz-deathmatch-config --ur-x 1000 --ur-y 1000 --ll-x 500 --ll-y 500
 
-**Arguments:**
-- `--mapgrouppos, -p`: Path to the source mapgrouppos.xml file (default: mapgrouppos.xml)
-- `--filtered-output, -f`: Filename for the filtered buildings output file (defaults to deathmatch_<original pos filename>)
-- `--mapgroupproto, -m`: Path to the source mapgroupproto.xml file (default: mapgroupproto.xml)
-- `--output, -o`: Filename for the final output proto file (defaults to deathmatch_<original proto filename>)
-- `--ur-x, -ux`: Upper right X coordinate of the deathmatch area
-- `--ur-y, -uy`: Upper right Y coordinate of the deathmatch area
-- `--ll-x, -lx`: Lower left X coordinate of the deathmatch area
-- `--ll-y, -ly`: Lower left Y coordinate of the deathmatch area
-- `--usage-tag, -u`: Usage tag to apply (default: Deathmatch)
-- `--verbose, -v`: Enable verbose logging
-- `--config, -c`: Configuration profile to use
-
-**Example Usage:**
-```bash
-# Create a deathmatch area around Severograd
+# Full configuration with custom files and usage tag
 dayz-deathmatch-config \
-    --mapgrouppos=mapgrouppos.xml \
-    --mapgroupproto=mapgroupproto.xml \
+    --mapgrouppos mapgrouppos.xml \
+    --mapgroupproto mapgroupproto.xml \
     --ur-x 8600 --ur-y 12780 --ll-x 7820 --ll-y 12000 \
     --usage-tag Deathmatch
 
-# Configure a small arena with verbose output
+# With custom output filenames and verbose logging
 dayz-deathmatch-config \
-    --mapgrouppos=mapgrouppos.xml \
-    --mapgroupproto=mapgroupproto.xml \
+    --mapgrouppos mapgrouppos.xml \
+    --mapgroupproto mapgroupproto.xml \
+    --pos-output filtered_buildings.xml \
+    --proto_output custom_proto.xml \
     --ur-x 1500 --ur-y 1500 --ll-x 1000 --ll-y 1000 \
     --usage-tag Arena --verbose
 ```
-- `--ll-y, -ly`: Lower left Y coordinate of the deathmatch area
-- `--usage-tag, -u`: Usage tag to apply (default: Deathmatch)
-- `--config, -c`: Configuration profile to use (affects output paths)
-- `--verbose, -v`: Enable verbose logging
-- `--config, -c`: Configuration profile to use
+
+**Parameters:**
+| Parameter | Short | Required | Default | Description |
+|-----------|-------|----------|---------|-------------|
+| `--mapgrouppos` | `-p` | No | `mapgrouppos.xml` | Path to the source mapgrouppos.xml file |
+| `--pos-output` | `-f` | No | `deathmatch_<original>` | Filename for the filtered buildings output file (timestamp added automatically) |
+| `--mapgroupproto` | `-m` | No | `mapgroupproto.xml` | Path to the source mapgroupproto.xml file |
+| `--proto_output` | `-o` | No | `deathmatch_<original>` | Filename for the final output proto file (timestamp added automatically) |
+| `--ur-x` | `-ux` | Yes | - | Upper right X coordinate of the deathmatch area |
+| `--ur-y` | `-uy` | Yes | - | Upper right Y coordinate of the deathmatch area |
+| `--ll-x` | `-lx` | Yes | - | Lower left X coordinate of the deathmatch area |
+| `--ll-y` | `-ly` | Yes | - | Lower left Y coordinate of the deathmatch area |
+| `--usage-tag` | `-u` | No | `Deathmatch` | Usage tag to apply (determines loot spawning) |
+| `--verbose` | `-v` | No | - | Enable verbose logging |
+| `--profile` | - | No | default | Configuration profile to use |
+| `--console` | - | No | - | Log detailed output summary |
 
 ### Missing Groups Comparer (`compare_missing_groups.py`)
+
+**CLI Command**: `dayz-compare-missing-groups`
 
 This tool compares two mapgroupproto.xml files and identifies groups that are missing in each file. It generates a comprehensive CSV report showing:
 
@@ -98,23 +102,24 @@ All output files include timestamps automatically and are stored in the director
 
 **Usage:**
 ```bash
+# Basic comparison
 dayz-compare-missing-groups file1.xml file2.xml --output comparison.csv
+
+# Use default output filename
+dayz-compare-missing-groups file1.xml file2.xml
+
+# Use specific configuration profile
+dayz-compare-missing-groups file1.xml file2.xml --profile server_2 --output group_comparison.csv
 ```
 
-**Arguments:**
-- `file1`: First mapgroupproto XML file
-- `file2`: Second mapgroupproto XML file
-- `--output, -o`: Filename for comparison output CSV (timestamp will be added automatically)
-- `--profile, -p`: Configuration profile to use (affects output paths)
-
-**Example Usage:**
-```bash
-# Compare two mapgroupproto files and generate a CSV report
-dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --output group_comparison.csv
-
-# Use a specific configuration profile
-dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --profile server_2
-```
+**Parameters:**
+| Parameter | Short | Required | Default | Description |
+|-----------|-------|----------|---------|-------------|
+| `file1` | - | Yes | - | First mapgroupproto XML file |
+| `file2` | - | Yes | - | Second mapgroupproto XML file |
+| `--output` | `-o` | No | `missing_groups_comparison.csv` | Filename for comparison output CSV (timestamp added automatically) |
+| `--profile` | - | No | default | Configuration profile to use |
+| `--console` | - | No | - | Log detailed output summary |
 
 **Output Format:**
 The generated CSV file includes the following information:
@@ -123,6 +128,15 @@ The generated CSV file includes the following information:
 - List of common groups present in both files
 - List of groups missing in the first file
 - List of groups missing in the second file
+
+## Common Parameters
+
+All proto XML tools share these common parameters:
+
+| Parameter | Description |
+|-----------|-------------|
+| `--profile` | Configuration profile to use (defaults to default profile if not specified) |
+| `--console` | Log detailed output summary in addition to regular logging |
 
 ## Configuration
 
@@ -139,4 +153,67 @@ The tools use the DayZ Admin Tools configuration system. These are the configura
 All output files from the tools will be stored in the directory specified by `general.output_path`. If this isn't specified, it defaults to an "output" directory in the current working directory.
 
 You don't need to configure any additional settings as the tools accept most parameters directly via command-line arguments.
+
+## Python API Usage
+
+You can also use these tools directly in Python code:
+
+### LootmaxComparer
+
+```python
+from dayz_admin_tools.xml.proto.compare_merge_lootmax_proto import LootmaxComparer
+
+# Initialize with config
+config = {"general": {"output_path": "output"}}
+comparer = LootmaxComparer(config)
+
+# Set up files
+comparer.file1 = "proto1.xml"
+comparer.file2 = "proto2.xml"
+comparer.output_file = "comparison.csv"
+comparer.merge_output_file = "merged.xml"
+
+# Run comparison and merge
+success = comparer.run()
+```
+
+### DeathmatchConfigTool
+
+```python
+from dayz_admin_tools.xml.proto.deathmatch_config_tool import DeathmatchConfigTool
+
+# Initialize with config
+config = {"general": {"output_path": "output"}}
+tool = DeathmatchConfigTool(config)
+
+# Set up parameters
+tool.mapgrouppos_file = "mapgrouppos.xml"
+tool.mapgroupproto_file = "mapgroupproto.xml"
+tool.ur_x = 1000
+tool.ur_y = 1000
+tool.ll_x = 500
+tool.ll_y = 500
+tool.usage_tag = "Deathmatch"
+
+# Run the tool
+success = tool.run()
+```
+
+### MissingGroupsComparer
+
+```python
+from dayz_admin_tools.xml.proto.compare_missing_groups import MissingGroupsComparer
+
+# Initialize with config
+config = {"general": {"output_path": "output"}}
+comparer = MissingGroupsComparer(config)
+
+# Set up files
+comparer.file1 = "proto1.xml"
+comparer.file2 = "proto2.xml"
+comparer.output_file = "missing_groups.csv"
+
+# Run comparison
+success = comparer.run()
+```
 ```
