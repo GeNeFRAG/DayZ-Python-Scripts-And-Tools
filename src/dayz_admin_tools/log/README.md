@@ -25,44 +25,75 @@ The `NitradoLogDownloader` class provides a flexible system for retrieving log f
 
 ### CLI Usage
 
-The command-line interface provides easy access through the `dayz-logs` command:
+The command-line interface provides easy access through the `dayz-download-logs` command:
 
 ```bash
 # Basic usage - downloads latest RPT and ADM logs
-dayz-logs
+dayz-download-logs
 
 # Download logs from a specific date range
-dayz-logs --start-date 2025-06-10 --end-date 2025-06-17
+dayz-download-logs --start-date 2025-06-10 --end-date 2025-06-17
 
 # Download logs matching specific patterns
-dayz-logs --pattern "*.RPT" --pattern "*script*.ADM"
+dayz-download-logs --pattern "*.RPT" --pattern "*script*.ADM"
 
 # Specify output directory
-dayz-logs --output-dir ./server_logs
+dayz-download-logs --output-dir ./server_logs
 
 # Download all available logs (use with caution)
-dayz-logs --all
+dayz-download-logs --all
 
 # Use a server profile with saved credentials
-dayz-logs --profile my_nitrado_server
+dayz-download-logs --profile my_nitrado_server
+
+# Enable verbose output
+dayz-download-logs --verbose
 ```
 
-### Advanced Options
+**Parameters**:
+- `--output-dir`: Directory to save logs to (optional, uses `general.log_download_path` from config if not specified)
+- `--start-date`: Start date for log files in YYYY-MM-DD format (optional)
+- `--end-date`: End date for log files in YYYY-MM-DD format (optional)
+- `--pattern`: Filename pattern (e.g., "*.RPT" or "script_*.ADM") (optional, can be specified multiple times)
+- `--no-default`: Disable downloading latest .RPT and .ADM files when no other filters match (optional)
+- `--all`: Download all .RPT and .ADM files (optional)
+- `--verbose, -v`: Enable verbose output (optional)
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
+
+### Filter Profile Management
 
 ```bash
-# Combine multiple filtering options
-dayz-logs --start-date 2025-06-01 --pattern "*.RPT" --output-dir ./rpt_logs
+# Use a saved filter profile
+dayz-download-logs --filter-profile last_week
 
-# Skip logs that have already been downloaded
-dayz-logs --skip-existing
+# Save current filter settings as a profile
+dayz-download-logs --start-date 2025-06-01 --end-date 2025-06-07 --pattern "*.RPT" --save-filter weekly_rpt
 
-# Show detailed information about available logs without downloading
-dayz-logs --list-only
+# List all available filter profiles
+dayz-download-logs --list-filters
+
+# List filter profiles in JSON format
+dayz-download-logs --list-filters --json
+
+# Create a set of common filter profiles
+dayz-download-logs --create-common-filters
+
+# Delete a filter profile
+dayz-download-logs --delete-filter old_profile
 ```
+
+**Filter Profile Parameters**:
+- `--filter-profile`: Use a saved filter profile (optional)
+- `--save-filter NAME`: Save current filter settings as a named profile (optional)
+- `--list-filters`: List all available filter profiles (optional)
+- `--json`: Output in JSON format when listing filter profiles (optional)
+- `--create-common-filters`: Create a set of common filter profiles (optional)
+- `--delete-filter NAME`: Delete a filter profile (optional)
 
 ## Log Filter Profiles
 
-The `LogFilterProfile` class allows saving and reusing combinations of filtering criteria, making it easier to consistently retrieve the same types of logs.
+The `LogFilterProfile` class allows saving and reusing combinations of filtering criteria, making it easier to consistently retrieve the same types of logs. You can manage profiles either through the main `dayz-download-logs` command or the dedicated `dayz-log-filter-profiles` tool.
 
 ### Features
 
@@ -71,24 +102,40 @@ The `LogFilterProfile` class allows saving and reusing combinations of filtering
 - **Portable Formats**: Profiles stored as standard JSON files
 - **CLI Integration**: Seamless use with the log downloader
 
-### Managing Profiles
+### Managing Profiles with dayz-log-filter-profiles
+
+The dedicated filter profiles tool provides more detailed management capabilities:
 
 ```bash
-# List all available filter profiles
-dayz-logs --list-filters
+# Create a new filter profile
+dayz-log-filter-profiles create weekly_rpt --start-date 2025-06-01 --end-date 2025-06-07 --patterns "*.RPT" --description "Weekly RPT logs"
 
-# Use a saved filter profile
-dayz-logs --filter-profile last_week
+# View a specific profile
+dayz-log-filter-profiles view weekly_rpt
 
-# Create a set of common filter profiles
-dayz-logs --create-common-filters
+# Delete a profile
+dayz-log-filter-profiles delete old_profile
 
-# Save current filter settings as a profile
-dayz-logs --start-date 2025-06-01 --end-date 2025-06-07 --pattern "*.RPT" --save-filter weekly_rpt
-
-# Delete a filter profile
-dayz-logs --delete-filter old_profile
+# Use a specific configuration profile
+dayz-log-filter-profiles create error_logs --patterns "*error*.RPT,*crash*.ADM" --profile myserver
 ```
+
+**Parameters for dayz-log-filter-profiles**:
+
+**Create Command**:
+- `name`: Name for the profile (required)
+- `--start-date`: Start date in YYYY-MM-DD format (optional)
+- `--end-date`: End date in YYYY-MM-DD format (optional)
+- `--patterns`: Comma-separated list of filename patterns (optional)
+- `--description`: Description of the profile (optional)
+- `--profile`: Configuration profile to use (optional)
+- `--console`: Log detailed output summary (optional)
+
+**View Command**:
+- `name`: Name of the profile to view (required)
+
+**Delete Command**:
+- `name`: Name of the profile to delete (required)
 
 ### Default Profiles
 
@@ -111,6 +158,13 @@ Filter profiles are stored as JSON files in:
 ```
 
 ## Configuration
+
+### Common Parameters
+
+All log tools support these standard command-line parameters:
+
+- `--profile`: Configuration profile to use (optional, uses default profile if not specified)
+- `--console`: Log detailed output summary in addition to regular logging (optional)
 
 ### Server Profile Configuration
 
@@ -151,19 +205,17 @@ Each filter profile is stored as a JSON file with this structure:
 ### Basic Log Downloading
 
 ```python
-from dayz_admin_tools.log import NitradoLogDownloader
-from dayz_admin_tools.config.config import Config
+from dayz_admin_tools.log.log_downloader import NitradoLogDownloader
 
 # Load configuration
-config = Config(profile='my_server')
-config_data = config.get()
+config = NitradoLogDownloader.load_config('my_server')  # or None for default
 
 # Create log downloader
-downloader = NitradoLogDownloader(config_data)
+downloader = NitradoLogDownloader(config)
 
-# Download latest logs
-results = downloader.run(output_dir="./logs")
-print(f"Downloaded {len(results['downloaded'])} log files")
+# Download latest logs (2 latest .RPT and 2 latest .ADM files by default)
+result = downloader.run(output_dir="./logs")
+print(f"Successfully downloaded logs: {result}")
 ```
 
 ### Advanced Filtering
@@ -172,29 +224,33 @@ print(f"Downloaded {len(results['downloaded'])} log files")
 from datetime import datetime, timedelta
 
 # Get logs from the past week with specific patterns
-yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-today = datetime.now().strftime("%Y-%m-%d")
-
-downloader = NitradoLogDownloader(config_data)
-results = downloader.run(
+downloader = NitradoLogDownloader(config)
+result = downloader.run(
     output_dir="./logs/weekly",
-    start_date=yesterday,
-    end_date=today,
+    start_date="2025-06-01",
+    end_date="2025-06-07",
     filename_patterns=["*crash*.RPT", "*script*.ADM"],
-    skip_existing=True
+    latest_default=False,  # Disable default latest files download
+    download_all=False
+)
+
+# Download all RPT and ADM files (use with caution)
+result = downloader.run(
+    output_dir="./logs/all",
+    download_all=True
 )
 ```
 
 ### Working with Filter Profiles
 
 ```python
-from dayz_admin_tools.log import LogFilterProfile
+from dayz_admin_tools.log.log_filter_profiles import LogFilterProfile
 
 # Create a filter profile manager
-profile_manager = LogFilterProfile(config_data)
+profile_manager = LogFilterProfile(config)
 
 # Create a new filter profile
-profile_manager.create_filter(
+profile_manager.save_profile(
     name="error_logs",
     description="Logs containing error messages",
     filename_patterns=["*error*.RPT", "*crash*.ADM"],
@@ -202,9 +258,29 @@ profile_manager.create_filter(
     end_date="2025-06-18"
 )
 
-# Apply a filter profile with the downloader
-filter_data = profile_manager.get_filter("error_logs")
-downloader.run(filter_profile=filter_data)
+# Load an existing profile
+profile_data = profile_manager.load_profile("error_logs")
+
+# Use a filter profile with the downloader
+downloader = NitradoLogDownloader(config)
+result = downloader.run(
+    output_dir="./logs",
+    filter_profile="error_logs"
+)
+
+# List all available profiles
+profiles = profile_manager.list_profiles()
+for profile in profiles:
+    print(f"Profile: {profile['name']} - {profile.get('description', 'No description')}")
+
+# Save current filter settings as a profile
+result = downloader.run(
+    output_dir="./logs",
+    start_date="2025-06-01",
+    end_date="2025-06-07",
+    filename_patterns=["*.RPT"],
+    save_profile="weekly_rpt_logs"
+)
 ```
 
 ## Integration with Nitrado API
