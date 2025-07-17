@@ -10,6 +10,45 @@ All tools in this package inherit from the `DayZTool` base class and follow a co
 
 ## Available Tools
 
+### Player List Manager
+
+**Script**: `player_list_manager.py`  
+**CLI Command**: `dayz-player-list-manager`
+
+Manages player lists (banlist, whitelist, and priority list) via Nitrado API.
+This tool provides comprehensive functionality for managing player access control lists.
+
+**Features**:
+- Retrieve current player lists from the server
+- Add/remove players from banlist, whitelist, or priority list
+- Export player lists to CSV format
+- Import players from CSV files with flexible column mapping
+- Batch operations for managing multiple players at once
+- Full Nitrado API integration
+
+**Usage**:
+```bash
+# List all banned players
+dayz-player-list-manager banlist list
+
+# Add players to banlist
+dayz-player-list-manager banlist add --identifiers player1 player2 player3
+
+# Remove players from whitelist
+dayz-player-list-manager whitelist remove --identifiers player1 player2
+
+# Export priority list to CSV
+dayz-player-list-manager priority export --output-file priority.csv
+
+# Import players from CSV to banlist
+dayz-player-list-manager banlist import --csv-file banned_players.csv --identifier-column username
+```
+
+**Configuration Requirements**:
+- Nitrado API token in secrets configuration
+- Service ID for the game server
+- SSL verification settings (optional)
+
 ### Kill Tracker
 
 **Script**: `kill_tracker.py`  

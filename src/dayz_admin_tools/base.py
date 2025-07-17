@@ -295,6 +295,46 @@ class FileBasedTool(DayZTool):
         logger.info(f"Results written to {resolved_path}")
         return resolved_path
     
+    def read_csv(self, csv_file: str, required_columns: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        """
+        Read data from a CSV file.
+        
+        Args:
+            csv_file: Path to the CSV file to read
+            required_columns: Optional list of column names that must be present
+            
+        Returns:
+            List of dictionaries representing the CSV rows
+            
+        Raises:
+            FileNotFoundError: If the CSV file doesn't exist
+            KeyError: If required columns are missing
+        """
+        import csv
+        
+        resolved_path = self.resolve_path(csv_file)
+        
+        if not os.path.exists(resolved_path):
+            raise FileNotFoundError(f"CSV file not found: {resolved_path}")
+        
+        data_rows = []
+        
+        with open(resolved_path, 'r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            
+            # Check for required columns
+            if required_columns:
+                missing_columns = set(required_columns) - set(reader.fieldnames)
+                if missing_columns:
+                    raise KeyError(f"Required columns missing from CSV: {missing_columns}. Available columns: {reader.fieldnames}")
+            
+            # Read all rows
+            for row in reader:
+                data_rows.append(dict(row))
+        
+        logger.info(f"Read {len(data_rows)} rows from {resolved_path}")
+        return data_rows
+    
     def generate_timestamped_filename(self, base_name: str, extension: str, prefix: str = "", suffix: str = "") -> str:
         """
         Generate a filename with a timestamp.

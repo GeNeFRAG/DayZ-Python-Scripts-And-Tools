@@ -5,7 +5,6 @@ This tool updates nominal and minimum values in a types.xml file based on counts
 It's useful for adjusting DayZ server item spawns based on external data sources or calculations.
 """
 
-import csv
 import logging
 import os
 import argparse
@@ -52,16 +51,12 @@ class SyncCsvToTypesTool(XMLTool):
         Returns:
             A dictionary with item names as keys and counts as values.
         """
-        # Resolve the path
-        resolved_path = self.resolve_path(csv_file)
+        # Use the base class read_csv method
+        data_rows = self.read_csv(csv_file, required_columns=['item', 'count'])
         
         counts = {}
-        with open(resolved_path, mode='r') as file:
-            reader = csv.DictReader(file)
-            if 'item' not in reader.fieldnames or 'count' not in reader.fieldnames:
-                raise KeyError(f"CSV file must contain 'item' and 'count' columns. Found columns: {reader.fieldnames}")
-            for row in reader:
-                counts[row['item']] = int(row['count'])
+        for row in data_rows:
+            counts[row['item']] = int(row['count'])
         
         if not counts:
             logger.warning(f"CSV file '{csv_file}' is empty. No items will be updated.")

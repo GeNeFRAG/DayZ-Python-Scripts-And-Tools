@@ -176,7 +176,293 @@ class NitradoAPIClient(DayZTool):
         except (requests.RequestException, KeyError) as e:
             logger.error(f"Error downloading file {remote_path}: {e}")
             raise
+
+    # Player Management - Server Settings Based Implementation
     
+    def get_server_settings(self) -> Dict[str, Any]:
+        """
+        Retrieve the current server settings from the most recent settings set.
+        
+        Since the /gameservers/settings endpoint doesn't have a reliable GET method,
+        we use the most recent settings set which contains the actual current configuration.
+        
+        Returns:
+            Dictionary containing server settings.
+            
+        Raises:
+            requests.RequestException: If the request fails.
+        """
+        try:
+            # Get all settings sets
+            response = self.make_request("/gameservers/settings/sets", method="GET")
+            sets = response.get('data', {}).get('sets', [])
+            logger.debug(f"Retrieved {len(sets)} settings sets from Nitrado API")
+            
+            if not sets:
+                logger.warning("No settings sets found, falling back to defaults endpoint")
+                # Fallback to defaults if no sets available
+                response = self.make_request("/gameservers/settings/defaults", method="GET")
+                return response.get('data', {}).get('settings', {})
+            
+            # Use the most recent set (first in the list)
+            latest_set = sets[0]
+            settings = latest_set.get('data', {}).get('settings', {})
+            
+            logger.debug(f"Using settings from latest set (ID: {latest_set.get('id')})")
+            return settings
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to retrieve server settings: {e}")
+            raise
+    
+    def update_server_setting(self, category: str, setting_name: str, value: str) -> Dict[str, Any]:
+        """
+        Update a single server setting using the direct settings endpoint.
+        
+        Args:
+            category: The settings category (e.g., "general")
+            setting_name: The name of the setting to update
+            value: The new value for the setting
+            
+        Returns:
+            API response dictionary.
+            
+        Raises:
+            requests.RequestException: If the request fails.
+        """
+        # Construct settings data for direct settings endpoint
+        settings_data = {
+            "category": category,
+            "key": setting_name,
+            "value": value
+        }
+        
+        try:
+            response = self.make_request(
+                "/gameservers/settings",
+                method="POST",
+                data=settings_data
+            )
+            logger.debug(f"Successfully updated setting {category}.{setting_name} = {value}")
+            return response
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to update server setting {category}.{setting_name}: {e}")
+            raise
+
+    def _get_list_members(self, list_type: str) -> List[str]:
+        """
+        Helper method to get list members from active server settings.
+        
+        Args:
+            list_type: Type of list ('whitelist', 'bans', 'priority').
+            
+        Returns:
+            List of player identifiers.
+        """
+        # Get current active server settings (not settings sets)
+        response = self.make_request("/gameservers", method="GET")
+        settings = response.get('data', {}).get('gameserver', {}).get('settings', {})
+        list_value = settings.get('general', {}).get(list_type, '')
+        
+        if not list_value:
+            return []
+        
+        # Split by carriage return and filter out empty strings
+        return [member.strip() for member in list_value.split('\r') if member.strip()]
+    
+    def _manage_list(self, list_type: str, action: str, identifiers: List[str]) -> Dict[str, Any]:
+        """
+        Manage a player list using the correct direct settings endpoint.
+        
+        This implementation follows the correct Nitrado API pattern:
+        - Uses /gameservers/settings endpoint for immediate updates
+        - Formats data as category/key/value for direct settings modification
+        - Updates active server configuration immediately
+        
+        Args:
+            list_type: Type of list ('whitelist', 'bans', 'priority').
+            action: Action to perform ('add' or 'remove').
+            identifiers: List of player identifiers to add or remove.
+            
+        Returns:
+            API response with updated list information.
+            
+        Raises:
+            ValueError: If list_type or action is invalid.
+            requests.RequestException: If the request fails.
+        """
+        if list_type not in ['whitelist', 'bans', 'priority']:
+            raise ValueError(f"Invalid list type: {list_type}. Use 'whitelist', 'bans', or 'priority'.")
+        
+        if action not in ['add', 'remove']:
+            raise ValueError(f"Invalid action: {action}. Use 'add' or 'remove'.")
+        
+        # Get current active server settings (not settings sets)
+        response = self.make_request("/gameservers", method="GET")
+        current_settings = response.get('data', {}).get('gameserver', {}).get('settings', {})
+        
+        if not current_settings:
+            logger.error("Failed to retrieve current active server settings.")
+            return {"error": "Failed to retrieve current active server settings"}
+        
+        # Get current list members from active settings
+        current_list = current_settings.get("general", {}).get(list_type, "")
+        current_members = set(current_list.split("\r")) if current_list else set()
+        
+        # Remove empty strings from current members
+        current_members = {member.strip() for member in current_members if member.strip()}
+        
+        # Apply changes using set operations
+        identifiers_set = set(identifiers)
+        if action == "add":
+            updated_members = current_members.union(identifiers_set)
+            added_members = identifiers_set - current_members
+            logger.info(f"Adding {len(added_members)} new members to {list_type}: {list(added_members)}")
+        else:  # remove
+            updated_members = current_members.difference(identifiers_set)
+            removed_members = current_members.intersection(identifiers_set)
+            logger.info(f"Removing {len(removed_members)} members from {list_type}: {list(removed_members)}")
+        
+        # Format updated list with carriage return delimiter
+        updated_list_value = "\r".join(sorted(updated_members)) if updated_members else ""
+        
+        # Construct the proper direct settings update payload
+        settings_data = {
+            "category": "general",
+            "key": list_type,
+            "value": updated_list_value
+        }
+        
+        try:
+            # Use the direct settings endpoint for immediate updates
+            response = self.make_request("/gameservers/settings", method="POST", data=settings_data)
+            
+            # Add additional info to response for backwards compatibility
+            response['updated_list'] = list(updated_members)
+            response['action'] = action
+            response['identifiers'] = identifiers
+            response['list_type'] = list_type
+            
+            logger.info(f"Successfully updated {list_type} list via direct settings endpoint")
+            return response
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to update {list_type} list via direct settings: {e}")
+            raise
+
+    # Player Management - Simplified Implementation
+    
+    def _format_list_response(self, members: List[str], list_type: str) -> List[Dict[str, Any]]:
+        """
+        Format player list as expected API response format.
+        
+        Args:
+            members: List of player identifiers.
+            list_type: Type of list for logging.
+            
+        Returns:
+            List of dictionaries with player information.
+        """
+        formatted_list = [{'name': member, 'id': member, 'id_type': 'identifier'} for member in members]
+        logger.info(f"Retrieved {list_type} with {len(formatted_list)} entries")
+        return formatted_list
+    
+    # Generic List Management Methods
+    def get_list(self, list_type: str) -> List[Dict[str, Any]]:
+        """
+        Retrieve any player list for the game server.
+        
+        Args:
+            list_type: Type of list ('bans', 'whitelist', 'priority').
+            
+        Returns:
+            List of players formatted as dictionaries.
+        """
+        if list_type not in ['bans', 'whitelist', 'priority']:
+            raise ValueError(f"Invalid list type: {list_type}")
+            
+        try:
+            members = self._get_list_members(list_type)
+            return self._format_list_response(members, list_type)
+        except requests.RequestException as e:
+            logger.error(f"Failed to retrieve {list_type}: {e}")
+            raise
+
+    def add_to_list(self, list_type: str, identifiers: List[str]) -> Dict[str, Any]:
+        """
+        Add players to any list.
+        
+        Args:
+            list_type: Type of list ('bans', 'whitelist', 'priority').
+            identifiers: List of player identifiers to add.
+            
+        Returns:
+            API response dictionary.
+        """
+        try:
+            response = self._manage_list(list_type, 'add', identifiers)
+            logger.info(f"Successfully added {len(identifiers)} players to {list_type}")
+            return response
+        except (ValueError, requests.RequestException) as e:
+            logger.error(f"Failed to add players to {list_type}: {e}")
+            raise
+
+    def remove_from_list(self, list_type: str, identifiers: List[str]) -> Dict[str, Any]:
+        """
+        Remove players from any list.
+        
+        Args:
+            list_type: Type of list ('bans', 'whitelist', 'priority').
+            identifiers: List of player identifiers to remove.
+            
+        Returns:
+            API response dictionary.
+        """
+        try:
+            response = self._manage_list(list_type, 'remove', identifiers)
+            logger.info(f"Successfully removed {len(identifiers)} players from {list_type}")
+            return response
+        except (ValueError, requests.RequestException) as e:
+            logger.error(f"Failed to remove players from {list_type}: {e}")
+            raise
+
+    # Convenience Methods for Backward Compatibility
+    def get_banlist(self) -> List[Dict[str, Any]]:
+        """Retrieve the current ban list."""
+        return self.get_list('bans')
+
+    def add_to_banlist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Add players to the ban list."""
+        return self.add_to_list('bans', identifiers)
+
+    def remove_from_banlist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Remove players from the ban list."""
+        return self.remove_from_list('bans', identifiers)
+
+    def get_whitelist(self) -> List[Dict[str, Any]]:
+        """Retrieve the current whitelist."""
+        return self.get_list('whitelist')
+
+    def add_to_whitelist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Add players to the whitelist."""
+        return self.add_to_list('whitelist', identifiers)
+
+    def remove_from_whitelist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Remove players from the whitelist."""
+        return self.remove_from_list('whitelist', identifiers)
+
+    def get_prioritylist(self) -> List[Dict[str, Any]]:
+        """Retrieve the current priority/admin list."""
+        return self.get_list('priority')
+
+    def add_to_prioritylist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Add players to the priority/admin list."""
+        return self.add_to_list('priority', identifiers)
+    
+    def remove_from_prioritylist(self, identifiers: List[str]) -> Dict[str, Any]:
+        """Remove players from the priority/admin list."""
+        return self.remove_from_list('priority', identifiers)
     
     def run(self) -> Dict[str, Any]:
         """

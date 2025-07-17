@@ -29,6 +29,9 @@ Here are the primary tools available:
 - `download-logs` - Download server log files from Nitrado with filtering
 - `log-filter-profiles` - Manage reusable log filtering profiles
 
+### Server Management
+- `player-list-manager` - Manage server player lists (banlist, whitelist, priority) via Nitrado API
+
 ### Player Analysis Tools
 - `duping-detector` - Detect potential item duplication exploits and suspicious login patterns
 - `kill-tracker` - Track and analyze player kills with rankings
