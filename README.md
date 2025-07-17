@@ -6,9 +6,10 @@ A Python package for DayZ server administration, providing tools for server mana
 
 - **XML Management**: Comprehensive tools for working with DayZ's types.xml, mapgroupproto.xml, and other economy files
 - **Log Analysis**: Tools for downloading, analyzing, and extracting useful information from server logs with Nitrado integration
+- **Player Management**: Advanced player list management (ban lists, whitelist, priority lists) via Nitrado API
 - **JSON Processing**: Utilities for working with DayZ's JSON configuration files like cfgEffectArea.json and object spawner files
 - **Player Tracking**: Advanced tools for position tracking, duping detection, and kill analysis
-- **Nitrado Integration**: Direct API integration for Nitrado-hosted DayZ servers
+- **Nitrado Integration**: Direct API integration for Nitrado-hosted DayZ servers with file and player management
 - **Configuration Management**: Robust configuration system supporting multiple server profiles and credentials
 
 ## Installation
@@ -68,6 +69,10 @@ Configuration options are defined in `src/config/profiles/default.json`. You can
 - **Deathmatch Config**: Configure deathmatch settings with area filtering (`dayz-deathmatch-config`)
 - **Compare Missing Groups**: Identify missing groups between mapgroupproto files (`dayz-compare-missing-groups`)
 
+### Admin Tools
+
+- **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API (`dayz-player-list-manager`)
+
 ### Log Tools
 
 - **Position Finder**: Find player positions and activities in log files (`dayz-position-finder`)
@@ -108,6 +113,30 @@ dayz-check-usage-tags --xml_file types.xml
 
 # Compare mapgroupproto files to find missing groups
 dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --output group_comparison.csv
+```
+
+### Player Management
+
+Manage player access and permissions via Nitrado API:
+
+```bash
+# Export current ban list to CSV
+dayz-player-list-manager banlist export
+
+# Add players to ban list
+dayz-player-list-manager banlist add player1 player2 griefer123
+
+# Remove players from ban list  
+dayz-player-list-manager banlist remove reformed_player
+
+# Import whitelist from CSV file
+dayz-player-list-manager whitelist import --csv-file new_admins.csv
+
+# Export priority/admin list
+dayz-player-list-manager priority export --output priority_list.csv
+
+# Add new admins to priority list
+dayz-player-list-manager priority add admin1 moderator2
 ```
 
 ### Log Analysis
@@ -173,7 +202,7 @@ config = DayZTool.load_config()
 # Create an API client
 client = NitradoAPIClient(config)
 
-# List files on the server
+# File operations
 files = client.list_files("/games/12345/ftproot/dayzxb/config/")
 for file in files:
     print(f"{file['name']} - {file['size']} bytes")
@@ -182,6 +211,49 @@ for file in files:
 content = client.download_file("/games/12345/ftproot/dayzxb/config/server.cfg")
 with open("local_server.cfg", "wb") as f:
     f.write(content)
+
+# Player list management
+ban_list = client.get_banlist()
+client.add_to_banlist(['cheater123', 'griefer456'])
+client.remove_from_banlist(['reformed_player'])
+
+# Whitelist management
+whitelist = client.get_whitelist()
+client.add_to_whitelist(['admin1', 'moderator2'])
+
+# Priority/Admin list management
+admin_list = client.get_prioritylist()  # or get_adminlist()
+client.add_to_prioritylist(['new_admin'])
+
+# Generic list operations (works with 'bans', 'whitelist', 'priority')
+ban_list = client.get_list('bans')
+client.add_to_list('whitelist', ['player1', 'player2'])
+client.remove_from_list('priority', ['old_admin'])
+```
+
+### Player List Management with API
+
+```python
+from dayz_admin_tools.tools.player_list_manager import PlayerListManagerTool
+from dayz_admin_tools.base import DayZTool
+
+# Load configuration
+config = DayZTool.load_config()
+
+# Initialize the player list manager
+manager = PlayerListManagerTool(config)
+
+# Export current ban list to CSV
+result = manager.run('banlist', 'export', output_file='current_bans.csv')
+
+# Add players from CSV to whitelist
+result = manager.run('whitelist', 'import', csv_file='new_admins.csv')
+
+# Add individual players to priority list
+result = manager.run('priority', 'add', identifiers=['admin1', 'moderator2'])
+
+# Remove players from ban list
+result = manager.run('banlist', 'remove', identifiers=['reformed_player'])
 ```
 
 ### XML Types Manipulation
