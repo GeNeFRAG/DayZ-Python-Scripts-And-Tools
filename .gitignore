@@ -57,3 +57,5 @@ logs/
 output/
 backups/
 *.zip
+
+bann_pmc.txt
