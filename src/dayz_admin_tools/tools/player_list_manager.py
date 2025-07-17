@@ -222,8 +222,20 @@ class PlayerListManagerTool(FileBasedTool):
                 return {'status': 'success', 'data': players}
             
             elif action == 'add':
-                if not identifiers:
-                    raise ValueError("Identifiers are required for add action")
+                # Check if user provided input_file instead of identifiers
+                if input_file and not identifiers:
+                    logger.info("Input file provided for 'add' action, treating as 'import' operation")
+                    if not input_file:
+                        raise ValueError("Input file is required when no identifiers provided")
+                    result = self.import_list_from_file(list_type, input_file)
+                    if "error" in result:
+                        logger.error(result["error"])
+                        return result
+                    print(f"Imported and added players from {input_file} to {list_type}")
+                    return result
+                elif not identifiers:
+                    raise ValueError("Identifiers are required for add action (use --identifiers player1 player2... or --input-file filename.txt)")
+                
                 result = self.add_to_list(list_type, identifiers)
                 if "error" in result:
                     logger.error(result["error"])
@@ -232,8 +244,18 @@ class PlayerListManagerTool(FileBasedTool):
                 return result
             
             elif action == 'remove':
-                if not identifiers:
-                    raise ValueError("Identifiers are required for remove action")
+                # Check if user provided input_file instead of identifiers
+                if input_file and not identifiers:
+                    logger.info("Input file provided for 'remove' action, treating as file-based removal")
+                    result = self.import_list_from_file(list_type, input_file, add_mode=False)
+                    if "error" in result:
+                        logger.error(result["error"])
+                        return result
+                    print(f"Imported and removed players from {input_file} from {list_type}")
+                    return result
+                elif not identifiers:
+                    raise ValueError("Identifiers are required for remove action (use --identifiers player1 player2... or --input-file filename.txt)")
+                
                 result = self.remove_from_list(list_type, identifiers)
                 if "error" in result:
                     logger.error(result["error"])
@@ -296,7 +318,7 @@ def main():
     
     parser.add_argument(
         '--input-file',
-        help='Text file path for import actions (one player ID per line, lines starting with # are ignored as comments)'
+        help='Text file path for import actions OR for add/remove actions (one player ID per line, lines starting with # are ignored as comments)'
     )
     
     parser.add_argument(
