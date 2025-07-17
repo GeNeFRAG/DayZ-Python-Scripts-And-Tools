@@ -1,0 +1,15 @@
+# Example player list file
+# Lines starting with # are comments and will be ignored
+# One player ID per line
+
+# Ban list example - add these troublemakers
+PlayerOne
+GrieferGamer123
+CheatMaster99
+
+# Steam IDs also work
+76561198123456789
+76561198987654321
+
+# Xbox gamertags
+XboxPlayer2024

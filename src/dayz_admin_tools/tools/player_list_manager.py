@@ -145,39 +145,42 @@ class PlayerListManagerTool(FileBasedTool):
         # Use the base class write_csv method
         return self.write_csv(players, output_file)
 
-    def import_list_from_csv(self, list_type: str, csv_file: str, 
-                           identifier_column: str = 'id', add_mode: bool = True) -> Dict[str, Any]:
+    def import_list_from_file(self, list_type: str, input_file: str, add_mode: bool = True) -> Dict[str, Any]:
         """
-        Import player identifiers from CSV file to a list.
+        Import player identifiers from a text file to a list.
         
         Args:
             list_type: Type of list to import to
-            csv_file: Path to the CSV file
-            identifier_column: Name of the column containing player identifiers
+            input_file: Path to the text file (one player ID per line)
             add_mode: If True, add players; if False, remove players
             
         Returns:
             API response dictionary
             
         Raises:
-            FileNotFoundError: If CSV file doesn't exist
-            KeyError: If identifier column doesn't exist
+            FileNotFoundError: If input file doesn't exist
         """
-        # Use the base class read_csv method
-        data_rows = self.read_csv(csv_file, required_columns=[identifier_column])
+        try:
+            with open(input_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
+        except FileNotFoundError:
+            raise FileNotFoundError(f"Input file not found: {input_file}")
         
-        # Extract identifiers from the specified column
+        # Extract identifiers from each line
         identifiers = []
-        for row in data_rows:
-            identifier = row[identifier_column].strip()
-            if identifier:  # Skip empty identifiers
+        for line_num, line in enumerate(lines, 1):
+            identifier = line.strip()
+            if identifier and not identifier.startswith('#'):  # Skip empty lines and comments
                 identifiers.append(identifier)
+                logger.debug(f"Line {line_num}: Added identifier '{identifier}'")
+            elif identifier.startswith('#'):
+                logger.debug(f"Line {line_num}: Skipped comment line")
         
         if not identifiers:
-            logger.warning(f"No valid identifiers found in {csv_file}")
+            logger.warning(f"No valid identifiers found in {input_file}")
             return {'status': 'warning', 'message': 'No valid identifiers found'}
         
-        logger.info(f"Found {len(identifiers)} identifiers in CSV file")
+        logger.info(f"Found {len(identifiers)} identifiers in file {input_file}")
         
         if add_mode:
             return self.add_to_list(list_type, identifiers)
@@ -185,18 +188,16 @@ class PlayerListManagerTool(FileBasedTool):
             return self.remove_from_list(list_type, identifiers)
 
     def run(self, list_type: str, action: str, identifiers: Optional[List[str]] = None, 
-            csv_file: Optional[str] = None, output_file: Optional[str] = None,
-            identifier_column: str = 'id') -> Dict[str, Any]:
+            input_file: Optional[str] = None, output_file: Optional[str] = None) -> Dict[str, Any]:
         """
         Main execution method for player list management.
         
         Args:
-            list_type: Type of list to manage ('banlist', 'whitelist', 'adminlist')
+            list_type: Type of list to manage ('banlist', 'whitelist', 'priority')
             action: Action to perform ('list', 'add', 'remove', 'export', 'import')
             identifiers: List of player identifiers for add/remove actions
-            csv_file: CSV file path for import/export actions
+            input_file: Text file path for import actions (one ID per line)
             output_file: Output file path for export action
-            identifier_column: Column name for identifiers in CSV
             
         Returns:
             Dictionary containing execution results
@@ -246,13 +247,13 @@ class PlayerListManagerTool(FileBasedTool):
                 return {'status': 'success', 'output_file': output_path}
             
             elif action == 'import':
-                if not csv_file:
-                    raise ValueError("CSV file is required for import action")
-                result = self.import_list_from_csv(list_type, csv_file, identifier_column)
+                if not input_file:
+                    raise ValueError("Input file is required for import action")
+                result = self.import_list_from_file(list_type, input_file)
                 if "error" in result:
                     logger.error(result["error"])
                     return result
-                print(f"Imported players from {csv_file} to {list_type}")
+                print(f"Imported players from {input_file} to {list_type}")
                 return result
             
             else:
@@ -294,19 +295,13 @@ def main():
     )
     
     parser.add_argument(
-        '--csv-file',
-        help='CSV file path for import/export actions'
+        '--input-file',
+        help='Text file path for import actions (one player ID per line, lines starting with # are ignored as comments)'
     )
     
     parser.add_argument(
         '--output-file',
         help='Output file path for export action (auto-generated if not specified)'
-    )
-    
-    parser.add_argument(
-        '--identifier-column',
-        default='id',
-        help='Column name for identifiers in CSV file (default: id)'
     )
     
     args = parser.parse_args()
@@ -321,9 +316,8 @@ def main():
             list_type=args.list_type,
             action=args.action,
             identifiers=args.identifiers,
-            csv_file=args.csv_file,
-            output_file=args.output_file,
-            identifier_column=args.identifier_column
+            input_file=args.input_file,
+            output_file=args.output_file
         )
         
         if result.get('status') == 'error':
