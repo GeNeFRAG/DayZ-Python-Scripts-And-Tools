@@ -76,7 +76,7 @@ class SumItemsJson(JSONTool, XMLTool):
         Note:
             Valid items are written to the main CSV file. If types.xml validation
             is enabled and invalid items are found, they are written to a separate
-            CSV file with '_invalid' suffix.
+            CSV file with '_invalid' suffix, grouped by source file for easier analysis.
         """
         # Parse types.xml if provided to get valid item names
         valid_items = self.parse_types_xml(types_xml)
@@ -156,17 +156,20 @@ class SumItemsJson(JSONTool, XMLTool):
                 }
                 valid_data_rows.append(row)
             else:
-                # Invalid items CSV: item, count, and source files
-                sources_str = '; '.join(info['sources'])
-                row = {
-                    'item': name, 
-                    'count': info['count'],
-                    'sources': sources_str
-                }
-                invalid_data_rows.append(row)
+                # Invalid items: create separate rows for each source file
+                for source_file in info['sources']:
+                    row = {
+                        'source_file': source_file,
+                        'item': name, 
+                        'count': info['count']
+                    }
+                    invalid_data_rows.append(row)
+        
+        # Sort invalid data rows by source file, then by item name
+        invalid_data_rows.sort(key=lambda x: (x['source_file'], x['item']))
             
         valid_headers = ['item', 'count']
-        invalid_headers = ['item', 'count', 'sources']
+        invalid_headers = ['source_file', 'item', 'count']
         
         # Write valid items to the main CSV file
         output_path = self.write_csv(valid_data_rows, output_path, valid_headers)
