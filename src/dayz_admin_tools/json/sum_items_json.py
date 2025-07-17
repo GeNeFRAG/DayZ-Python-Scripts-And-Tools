@@ -26,8 +26,8 @@ class SumItemsJson(JSONTool, XMLTool):
     
     This tool processes multiple JSON files containing objects with "name" attributes,
     aggregates the counts of each unique name, and outputs the results to a CSV file.
-    The tool can filter out static objects or include all object types.
-    It can also validate items against a types.xml file.
+    The tool filters out static objects (starting with "StaticObj_" or "Land_") and
+    3D model files (ending with ".p3d"). It can also validate items against a types.xml file.
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
@@ -72,6 +72,11 @@ class SumItemsJson(JSONTool, XMLTool):
             
         Returns:
             Dictionary of item names and their counts and validation info
+            
+        Note:
+            Valid items are written to the main CSV file. If types.xml validation
+            is enabled and invalid items are found, they are written to a separate
+            CSV file with '_invalid' suffix.
         """
         # Parse types.xml if provided to get valid item names
         valid_items = self.parse_types_xml(types_xml)
@@ -82,12 +87,14 @@ class SumItemsJson(JSONTool, XMLTool):
         else:
             self.logger.warning("No types.xml file provided or none found, items won't be validated")
         
-        # Initialize a Counter to aggregate counts
+        # Initialize a Counter to aggregate counts and track source files
         name_counts = Counter()
+        item_sources = {}  # Track which files each item comes from
         
         # Process each file
         for filename in json_files:
             self.logger.info(f"Processing {filename}")
+            base_filename = os.path.basename(filename)
             try:
                 with open(filename, 'r') as f:
                     data = json.load(f)
@@ -97,22 +104,30 @@ class SumItemsJson(JSONTool, XMLTool):
                         if "name" in obj:
                             name = obj["name"]
                             
-                            # Skip static objects
-                            if name.startswith("StaticObj_") or name.startswith("Land_"):
+                            # Skip static objects and 3D model files
+                            if (name.startswith("StaticObj_") or 
+                                name.startswith("Land_") or 
+                                name.endswith(".p3d")):
                                 continue
                                 
                             name_counts[name] += 1
+                            
+                            # Track source files for this item
+                            if name not in item_sources:
+                                item_sources[name] = set()
+                            item_sources[name].add(base_filename)
                 else:
                     self.logger.warning(f"No 'Objects' key found in {filename}")
                     
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 self.logger.error(f"Error processing {filename}: {e}")
         
-        # Create a dictionary with counts and validation info
+        # Create a dictionary with counts, validation info, and source files
         item_data = {}
         for name, count in sorted(name_counts.items()):
             item_data[name] = {
                 'count': count,
+                'sources': sorted(list(item_sources.get(name, set()))),
                 'valid': not has_types_file or name in valid_items
             }
             
@@ -128,24 +143,44 @@ class SumItemsJson(JSONTool, XMLTool):
         # Ensure output directories exist
         self.ensure_dir(os.path.dirname(output_path))
         
-        # Create data rows for CSV, excluding invalid items
-        data_rows = []
+        # Create data rows for CSV, separating valid and invalid items
+        valid_data_rows = []
+        invalid_data_rows = []
+        
         for name, info in item_data.items():
-            # Only include valid items
             if info['valid']:
+                # Valid items CSV: only item and count
                 row = {
                     'item': name, 
                     'count': info['count']
                 }
-                data_rows.append(row)
+                valid_data_rows.append(row)
+            else:
+                # Invalid items CSV: item, count, and source files
+                sources_str = '; '.join(info['sources'])
+                row = {
+                    'item': name, 
+                    'count': info['count'],
+                    'sources': sources_str
+                }
+                invalid_data_rows.append(row)
             
-        headers = ['item', 'count']
+        valid_headers = ['item', 'count']
+        invalid_headers = ['item', 'count', 'sources']
         
-        # Use the write_csv method from FileBasedTool
-        output_path = self.write_csv(data_rows, output_path, headers)
+        # Write valid items to the main CSV file
+        output_path = self.write_csv(valid_data_rows, output_path, valid_headers)
+        
+        # Write invalid items to a separate CSV file if there are any
+        if invalid_data_rows and has_types_file:
+            # Generate invalid items filename based on the valid items filename
+            base_name = os.path.splitext(os.path.basename(output_path))[0]
+            invalid_csv_filename = f"{base_name}_invalid.csv"
+            invalid_output_path = self.write_csv(invalid_data_rows, invalid_csv_filename, invalid_headers)
+            self.logger.info(f"Invalid items written to {invalid_output_path}")
         
         # Count valid and total items for logging
-        valid_item_count = len(data_rows)
+        valid_item_count = len(valid_data_rows)
         total_item_count = len(item_data)
         
         self.logger.info(f"Processed {len(json_files)} files, found {total_item_count} unique items")
@@ -234,7 +269,8 @@ def main():
     print(f"CSV output: {valid_items} valid items included, {invalid_items} invalid items excluded")
     
     if invalid_items > 0:
-        print("\nItems not found in types.xml may need to be added or could be typos.")
+        print(f"Invalid items written to separate CSV file with '_invalid' suffix")
+        print("Items not found in types.xml may need to be added or could be typos.")
 
 
 if __name__ == '__main__':
