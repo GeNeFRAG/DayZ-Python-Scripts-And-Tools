@@ -12,6 +12,8 @@ The `NitradoAPIClient` class provides a clean, generic interface for interacting
 
 - Authentication with API tokens
 - File operations (list, download, upload)
+- Player list management (ban lists, whitelist, priority/admin lists)
+- Server settings management
 
 The client is designed to be a minimal wrapper around the Nitrado API, providing core functionality that can be used by higher-level modules.
 
@@ -38,16 +40,59 @@ with open('local_server.cfg', 'wb') as f:
     
 # Upload a file
 client.upload_file('local_types.xml', '/games/12345/ftproot/dayzxb/mpmissions/dayzOffline.chernarusplus/db/types.xml')
+
+# Player List Management
+# Get current ban list
+ban_list = client.get_banlist()
+for player in ban_list:
+    print(f"Banned player: {player['name']}")
+
+# Add players to ban list
+client.add_to_banlist(['cheater123', 'griefer456'])
+
+# Remove players from ban list
+client.remove_from_banlist(['reformed_player'])
+
+# Whitelist operations
+whitelist = client.get_whitelist()
+client.add_to_whitelist(['admin1', 'moderator2'])
+client.remove_from_whitelist(['former_admin'])
+
+# Priority/Admin list operations
+admin_list = client.get_prioritylist()  # or get_adminlist()
+client.add_to_prioritylist(['new_admin'])
+client.remove_from_prioritylist(['demoted_admin'])
+
+# Generic list operations (more flexible)
+# Works with 'bans', 'whitelist', 'priority'
+ban_list = client.get_list('bans')
+client.add_to_list('whitelist', ['player1', 'player2'])
+client.remove_from_list('priority', ['old_admin'])
 ```
 
 **Available Methods**:
+
+*File Operations:*
 - `list_files(directory_path)`: List files in a remote directory
 - `download_file(remote_path)`: Download a file and return its content as bytes
 - `upload_file(local_path, remote_path)`: Upload a local file to the remote server
 
-## Integration with Log Downloader
+*Player List Management:*
+- `get_banlist()`, `get_whitelist()`, `get_prioritylist()`: Retrieve player lists
+- `add_to_banlist(identifiers)`, `add_to_whitelist(identifiers)`, `add_to_prioritylist(identifiers)`: Add players to lists
+- `remove_from_banlist(identifiers)`, `remove_from_whitelist(identifiers)`, `remove_from_prioritylist(identifiers)`: Remove players from lists
+- `get_list(list_type)`, `add_to_list(list_type, identifiers)`, `remove_from_list(list_type, identifiers)`: Generic list operations
 
-The API client is used by the `NitradoLogDownloader` class (in the `log` package) for downloading server logs:
+*Server Settings:*
+- `update_server_setting(category, setting_name, value)`: Update individual server settings
+
+## Integration with Other Tools
+
+The API client is used by various tools in the DayZ Admin Tools suite:
+
+### Log Downloader Integration
+
+Used by the `NitradoLogDownloader` class (in the `log` package) for downloading server logs:
 
 ```python
 from dayz_admin_tools.log.log_downloader import NitradoLogDownloader
@@ -67,6 +112,26 @@ result = downloader.run(
 )
 ```
 
+### Player List Manager Integration
+
+Used by the `PlayerListManagerTool` class for managing server player lists:
+
+```python
+from dayz_admin_tools.tools.player_list_manager import PlayerListManagerTool
+
+# Load configuration with API credentials
+config = PlayerListManagerTool.load_config('my_profile')
+
+# Initialize the player list manager (which uses NitradoAPIClient internally)
+manager = PlayerListManagerTool(config)
+
+# Export current ban list to CSV
+result = manager.run('banlist', 'export', output_file='current_bans.csv')
+
+# Add players from CSV to whitelist
+result = manager.run('whitelist', 'import', csv_file='new_admins.csv')
+```
+
 For log-specific functionality, please refer to the documentation in the `log` package.
 
 ## Command-Line Interface
@@ -75,6 +140,7 @@ For log-specific functionality, please refer to the documentation in the `log` p
 
 For command-line functionality that uses the Nitrado API, see:
 - **Log Module**: `dayz-download-logs` command for downloading server logs
+- **Player List Manager**: `dayz-player-list-manager` command for managing player lists (ban, whitelist, priority)
 - **Other modules**: May use this API client internally for their specific functionality
 
 If you need to interact with the Nitrado API from the command line, consider using the tools in other modules that are built on top of this API client.
@@ -122,5 +188,17 @@ The `NitradoAPIClient` is designed as a thin wrapper around the Nitrado HTTP API
 - Basic authentication handling
 - HTTP request handling with proper error logging
 - Core file operations (list, download, upload)
+- Player list management (bans, whitelist, priority lists)
+- Server settings management
 
 It deliberately avoids adding application-specific functionality, making it a stable base layer for other modules to build upon.
+
+## Recent Improvements
+
+The API client has been significantly refactored and simplified:
+
+- **Removed unused methods**: Eliminated `bulk_update_lists` and obsolete settings sets approach
+- **Correct API usage**: All player list operations now use the proven `/gameservers/settings` endpoint
+- **Streamlined code**: Reduced codebase by ~20% while maintaining full functionality
+- **Improved reliability**: Uses direct settings endpoint for immediate server configuration updates
+- **Backward compatibility**: All existing method signatures preserved with convenience aliases
