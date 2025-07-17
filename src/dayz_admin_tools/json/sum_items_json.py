@@ -267,6 +267,9 @@ def main():
     valid_items = sum(1 for info in result.values() if info['valid'])
     invalid_items = total_items - valid_items
     
+    # Calculate total count of all items (sum of all individual counts)
+    total_count = sum(info['count'] for info in result.values())
+    
     print(f"Processed {len(args.json_files)} files, found {total_items} unique items")
     print(f"Output directory: {counter.output_dir}")
     print(f"CSV output: {valid_items} valid items included, {invalid_items} invalid items excluded")
@@ -274,7 +277,14 @@ def main():
     if invalid_items > 0:
         print(f"Invalid items written to separate CSV file with '_invalid' suffix")
         print("Items not found in types.xml may need to be added or could be typos.")
+    
+    # Print total count for shell script consumption (parseable output)
+    print(f"TOTAL_COUNT={total_count}")
+    
+    # Return total count
+    return total_count
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    sys.exit(main())

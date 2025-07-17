@@ -113,13 +113,19 @@ def main():
         logger.info(f"- Events file: {result['events_file']}")
         logger.info(f"- Groups file: {result['groups_file']}")
         logger.info(f"- Event active: {'Yes' if result['active'] else 'No'}")
+        total_items = 0
         if result['active']:
+            total_items = result['total_items']
             logger.info(f"- Nominal value: {result['nominal']}")
-            logger.info(f"- Total items: {result['total_items']}")
+            logger.info(f"- Total items: {total_items}")
             logger.info(f"- Ignored types: {', '.join(result['ignored_types'])}")
         logger.info(f"- Results written to: {result['output_file']}")
         
-        return 0
+        # Print total count for shell script consumption
+        print(f"TOTAL_COUNT={total_items}")
+        
+        # Return total count
+        return total_items
         
     except Exception as e:
         logger.error(f"Critical error: {str(e)}")

@@ -90,20 +90,25 @@ def main():
             return 1
             
         # Display results
+        total_items = result['total_items']
         logger.info(f"\nAnalysis complete:")
         logger.info(f"- Events file: {result['events_file']}")
         logger.info(f"- Groups file: {result['groups_file']}")
         logger.info(f"- Active StaticBuilder events: {result['active_events']}")
-        logger.info(f"- Total items: {result['total_items']}")
+        logger.info(f"- Total items: {total_items}")
         logger.info(f"- Results written to: {result['output_file']}")
+        
+        # Print total count for shell script consumption
+        print(f"TOTAL_COUNT={total_items}")
+        
+        # Return total count
+        return total_items
         
     except Exception as e:
         logging.error(f"Error: {str(e)}")
         import traceback
         logging.debug(traceback.format_exc())
         return 1
-        
-    return 0
 
 
 if __name__ == "__main__":
