@@ -17,6 +17,12 @@ logger = logging.getLogger(__name__)
 
 NITRADO_API_BASE_URL = "https://api.nitrado.net/services/"
 
+# Player list type constants
+LIST_TYPE_WHITELIST = 'whitelist'
+LIST_TYPE_BANS = 'bans'
+LIST_TYPE_PRIORITY = 'priority'
+VALID_LIST_TYPES = [LIST_TYPE_WHITELIST, LIST_TYPE_BANS, LIST_TYPE_PRIORITY]
+
 
 class NitradoAPIClient(DayZTool):
     """Client for interacting with the Nitrado API."""
@@ -271,6 +277,98 @@ class NitradoAPIClient(DayZTool):
         # Split by carriage return and filter out empty strings
         return [member.strip() for member in list_value.split('\r') if member.strip()]
     
+    def _get_current_server_settings(self) -> Dict[str, Any]:
+        """
+        Get current active server settings.
+        
+        Returns:
+            Dictionary containing current server settings.
+            
+        Raises:
+            requests.RequestException: If the request fails.
+            ValueError: If settings cannot be retrieved.
+        """
+        response = self.make_request("/gameservers", method="GET")
+        current_settings = response.get('data', {}).get('gameserver', {}).get('settings', {})
+        
+        if not current_settings:
+            raise ValueError("Failed to retrieve current active server settings")
+        
+        return current_settings
+    
+    def _get_current_list_members(self, list_type: str, settings: Dict[str, Any]) -> set:
+        """
+        Extract current list members from server settings.
+        
+        Args:
+            list_type: Type of list to extract.
+            settings: Server settings dictionary.
+            
+        Returns:
+            Set of current list members (cleaned and filtered).
+        """
+        current_list = settings.get("general", {}).get(list_type, "")
+        current_members = set(current_list.split("\r")) if current_list else set()
+        
+        # Remove empty strings from current members
+        return {member.strip() for member in current_members if member.strip()}
+    
+    def _apply_list_changes(self, current_members: set, identifiers: List[str], action: str, list_type: str) -> set:
+        """
+        Apply add/remove changes to a list and log the operations.
+        
+        Args:
+            current_members: Current set of list members.
+            identifiers: List of identifiers to add or remove.
+            action: Action to perform ('add' or 'remove').
+            list_type: Type of list for logging.
+            
+        Returns:
+            Updated set of list members.
+        """
+        identifiers_set = set(identifiers)
+        
+        if action == "add":
+            updated_members = current_members.union(identifiers_set)
+            added_members = identifiers_set - current_members
+            logger.info(f"Adding {len(added_members)} new members to {list_type}: {list(added_members)}")
+        else:  # remove
+            updated_members = current_members.difference(identifiers_set)
+            removed_members = current_members.intersection(identifiers_set)
+            logger.info(f"Removing {len(removed_members)} members from {list_type}: {list(removed_members)}")
+        
+        return updated_members
+    
+    def _update_list_setting(self, list_type: str, updated_members: set) -> Dict[str, Any]:
+        """
+        Update the server setting with the new list members.
+        
+        Args:
+            list_type: Type of list to update.
+            updated_members: Set of updated list members.
+            
+        Returns:
+            API response dictionary.
+            
+        Raises:
+            requests.RequestException: If the request fails.
+        """
+        # Format updated list with carriage return delimiter
+        updated_list_value = "\r".join(sorted(updated_members)) if updated_members else ""
+        
+        # Construct the proper direct settings update payload
+        settings_data = {
+            "category": "general",
+            "key": list_type,
+            "value": updated_list_value
+        }
+        
+        # Use the direct settings endpoint for immediate updates
+        response = self.make_request("/gameservers/settings", method="POST", data=settings_data)
+        logger.info(f"Successfully updated {list_type} list via direct settings endpoint")
+        
+        return response
+    
     def _manage_list(self, list_type: str, action: str, identifiers: List[str]) -> Dict[str, Any]:
         """
         Manage a player list using the correct direct settings endpoint.
@@ -292,51 +390,25 @@ class NitradoAPIClient(DayZTool):
             ValueError: If list_type or action is invalid.
             requests.RequestException: If the request fails.
         """
-        if list_type not in ['whitelist', 'bans', 'priority']:
-            raise ValueError(f"Invalid list type: {list_type}. Use 'whitelist', 'bans', or 'priority'.")
+        # Validate input parameters
+        if list_type not in VALID_LIST_TYPES:
+            raise ValueError(f"Invalid list type: {list_type}. Use {', '.join(VALID_LIST_TYPES)}.")
         
         if action not in ['add', 'remove']:
             raise ValueError(f"Invalid action: {action}. Use 'add' or 'remove'.")
         
-        # Get current active server settings (not settings sets)
-        response = self.make_request("/gameservers", method="GET")
-        current_settings = response.get('data', {}).get('gameserver', {}).get('settings', {})
-        
-        if not current_settings:
-            logger.error("Failed to retrieve current active server settings.")
-            return {"error": "Failed to retrieve current active server settings"}
-        
-        # Get current list members from active settings
-        current_list = current_settings.get("general", {}).get(list_type, "")
-        current_members = set(current_list.split("\r")) if current_list else set()
-        
-        # Remove empty strings from current members
-        current_members = {member.strip() for member in current_members if member.strip()}
-        
-        # Apply changes using set operations
-        identifiers_set = set(identifiers)
-        if action == "add":
-            updated_members = current_members.union(identifiers_set)
-            added_members = identifiers_set - current_members
-            logger.info(f"Adding {len(added_members)} new members to {list_type}: {list(added_members)}")
-        else:  # remove
-            updated_members = current_members.difference(identifiers_set)
-            removed_members = current_members.intersection(identifiers_set)
-            logger.info(f"Removing {len(removed_members)} members from {list_type}: {list(removed_members)}")
-        
-        # Format updated list with carriage return delimiter
-        updated_list_value = "\r".join(sorted(updated_members)) if updated_members else ""
-        
-        # Construct the proper direct settings update payload
-        settings_data = {
-            "category": "general",
-            "key": list_type,
-            "value": updated_list_value
-        }
-        
         try:
-            # Use the direct settings endpoint for immediate updates
-            response = self.make_request("/gameservers/settings", method="POST", data=settings_data)
+            # Get current server settings
+            current_settings = self._get_current_server_settings()
+            
+            # Extract current list members
+            current_members = self._get_current_list_members(list_type, current_settings)
+            
+            # Apply the requested changes
+            updated_members = self._apply_list_changes(current_members, identifiers, action, list_type)
+            
+            # Update the server setting
+            response = self._update_list_setting(list_type, updated_members)
             
             # Add additional info to response for backwards compatibility
             response['updated_list'] = list(updated_members)
@@ -344,10 +416,9 @@ class NitradoAPIClient(DayZTool):
             response['identifiers'] = identifiers
             response['list_type'] = list_type
             
-            logger.info(f"Successfully updated {list_type} list via direct settings endpoint")
             return response
             
-        except requests.RequestException as e:
+        except (ValueError, requests.RequestException) as e:
             logger.error(f"Failed to update {list_type} list via direct settings: {e}")
             raise
 
@@ -379,7 +450,7 @@ class NitradoAPIClient(DayZTool):
         Returns:
             List of players formatted as dictionaries.
         """
-        if list_type not in ['bans', 'whitelist', 'priority']:
+        if list_type not in VALID_LIST_TYPES:
             raise ValueError(f"Invalid list type: {list_type}")
             
         try:
@@ -430,39 +501,39 @@ class NitradoAPIClient(DayZTool):
     # Convenience Methods for Backward Compatibility
     def get_banlist(self) -> List[Dict[str, Any]]:
         """Retrieve the current ban list."""
-        return self.get_list('bans')
+        return self.get_list(LIST_TYPE_BANS)
 
     def add_to_banlist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Add players to the ban list."""
-        return self.add_to_list('bans', identifiers)
+        return self.add_to_list(LIST_TYPE_BANS, identifiers)
 
     def remove_from_banlist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Remove players from the ban list."""
-        return self.remove_from_list('bans', identifiers)
+        return self.remove_from_list(LIST_TYPE_BANS, identifiers)
 
     def get_whitelist(self) -> List[Dict[str, Any]]:
         """Retrieve the current whitelist."""
-        return self.get_list('whitelist')
+        return self.get_list(LIST_TYPE_WHITELIST)
 
     def add_to_whitelist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Add players to the whitelist."""
-        return self.add_to_list('whitelist', identifiers)
+        return self.add_to_list(LIST_TYPE_WHITELIST, identifiers)
 
     def remove_from_whitelist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Remove players from the whitelist."""
-        return self.remove_from_list('whitelist', identifiers)
+        return self.remove_from_list(LIST_TYPE_WHITELIST, identifiers)
 
     def get_prioritylist(self) -> List[Dict[str, Any]]:
         """Retrieve the current priority/admin list."""
-        return self.get_list('priority')
+        return self.get_list(LIST_TYPE_PRIORITY)
 
     def add_to_prioritylist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Add players to the priority/admin list."""
-        return self.add_to_list('priority', identifiers)
+        return self.add_to_list(LIST_TYPE_PRIORITY, identifiers)
     
     def remove_from_prioritylist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Remove players from the priority/admin list."""
-        return self.remove_from_list('priority', identifiers)
+        return self.remove_from_list(LIST_TYPE_PRIORITY, identifiers)
     
     def run(self) -> Dict[str, Any]:
         """
