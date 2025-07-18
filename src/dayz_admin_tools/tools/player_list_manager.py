@@ -94,7 +94,7 @@ class PlayerListManagerTool(FileBasedTool):
         elif list_type == 'whitelist':
             return self.api_client.add_to_whitelist(identifiers)
         elif list_type == 'priority':
-            return self.api_client.add_to_adminlist(identifiers)
+            return self.api_client.add_to_prioritylist(identifiers)
         
         return {}
 
@@ -122,7 +122,7 @@ class PlayerListManagerTool(FileBasedTool):
         elif list_type == 'whitelist':
             return self.api_client.remove_from_whitelist(identifiers)
         elif list_type == 'priority':
-            return self.api_client.remove_from_adminlist(identifiers)
+            return self.api_client.remove_from_prioritylist(identifiers)
         
         return {}
 

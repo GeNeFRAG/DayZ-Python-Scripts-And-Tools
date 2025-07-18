@@ -23,6 +23,10 @@ LIST_TYPE_BANS = 'bans'
 LIST_TYPE_PRIORITY = 'priority'
 VALID_LIST_TYPES = [LIST_TYPE_WHITELIST, LIST_TYPE_BANS, LIST_TYPE_PRIORITY]
 
+# Line ending constants for player lists
+LINE_ENDING_CRLF = '\r\n'  # Windows-style line ending (proper format)
+LINE_ENDING_CR = '\r'      # Legacy carriage return only
+
 
 class NitradoAPIClient(DayZTool):
     """Client for interacting with the Nitrado API."""
@@ -274,8 +278,14 @@ class NitradoAPIClient(DayZTool):
         if not list_value:
             return []
         
-        # Split by carriage return and filter out empty strings
-        return [member.strip() for member in list_value.split('\r') if member.strip()]
+        # Handle both \r\n and \r line endings for backward compatibility
+        if LINE_ENDING_CRLF in list_value:
+            members = list_value.split(LINE_ENDING_CRLF)
+        else:
+            members = list_value.split(LINE_ENDING_CR)
+        
+        # Filter out empty strings and strip whitespace
+        return [member.strip() for member in members if member.strip()]
     
     def _get_current_server_settings(self) -> Dict[str, Any]:
         """
@@ -308,7 +318,11 @@ class NitradoAPIClient(DayZTool):
             Set of current list members (cleaned and filtered).
         """
         current_list = settings.get("general", {}).get(list_type, "")
-        current_members = set(current_list.split("\r")) if current_list else set()
+        # Handle both \r\n and \r line endings for backward compatibility
+        if LINE_ENDING_CRLF in current_list:
+            current_members = set(current_list.split(LINE_ENDING_CRLF))
+        else:
+            current_members = set(current_list.split(LINE_ENDING_CR)) if current_list else set()
         
         # Remove empty strings from current members
         return {member.strip() for member in current_members if member.strip()}
@@ -353,8 +367,8 @@ class NitradoAPIClient(DayZTool):
         Raises:
             requests.RequestException: If the request fails.
         """
-        # Format updated list with carriage return delimiter
-        updated_list_value = "\r".join(sorted(updated_members)) if updated_members else ""
+        # Format updated list with carriage return + line feed delimiter
+        updated_list_value = LINE_ENDING_CRLF.join(sorted(updated_members)) if updated_members else ""
         
         # Construct the proper direct settings update payload
         settings_data = {
