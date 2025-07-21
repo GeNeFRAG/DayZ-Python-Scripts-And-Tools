@@ -124,10 +124,10 @@ Manage player access and permissions via Nitrado API:
 dayz-player-list-manager banlist export
 
 # Add players to ban list
-dayz-player-list-manager banlist add player1 player2 griefer123
+dayz-player-list-manager banlist add --identifiers player1 player2 griefer123
 
 # Remove players from ban list  
-dayz-player-list-manager banlist remove reformed_player
+dayz-player-list-manager banlist remove --identifiers reformed_player
 
 # Import whitelist from CSV file
 dayz-player-list-manager whitelist import --csv-file new_admins.csv
@@ -136,7 +136,7 @@ dayz-player-list-manager whitelist import --csv-file new_admins.csv
 dayz-player-list-manager priority export --output priority_list.csv
 
 # Add new admins to priority list
-dayz-player-list-manager priority add admin1 moderator2
+dayz-player-list-manager priority add --identifiers admin1 moderator2
 ```
 
 ### Log Analysis
