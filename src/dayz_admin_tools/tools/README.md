@@ -66,10 +66,10 @@ Tracks and ranks player kills from DayZ server logs. The tool analyzes ADM log f
 **Usage**:
 ```bash
 # Basic usage with time range
-dayz-kill-tracker --log-dir /path/to/logs --start "2025-05-01 00:00:00" --end "2025-05-31 23:59:59"
+dayz-kill-tracker --log-dir /path/to/logs --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
 
 # Use specific configuration profile
-dayz-kill-tracker --profile myserver --start "2025-05-01 00:00:00" --end "2025-05-31 23:59:59"
+dayz-kill-tracker --profile myserver --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
 
 # Analyze all logs in configured directory
 dayz-kill-tracker
@@ -77,8 +77,8 @@ dayz-kill-tracker
 
 **Parameters**:
 - `--log-dir`: Path to directory containing .ADM log files (optional, uses configured path if not specified)
-- `--start`: Start date and time in YYYY-MM-DD HH:MM:SS format (optional)
-- `--end`: End date and time in YYYY-MM-DD HH:MM:SS format (optional)
+- `--start`: Start date and time in D.M.YYYY HH:MM:SS format (e.g., 01.05.2025 00:00:00) (optional)
+- `--end`: End date and time in D.M.YYYY HH:MM:SS format (e.g., 31.05.2025 23:59:59) (optional)
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
 
@@ -145,7 +145,7 @@ dayz-position-finder --file_pattern "*.ADM" --target_x 7500 --target_y 8500 --ra
 dayz-position-finder --player "SurvivorName"
 
 # Filter by date range and use specific output file
-dayz-position-finder --player "SurvivorName" --start-date 2023-06-01 --end-date 2023-06-30 --output player_positions.csv
+dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
 
 # Use configuration profile
 dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
@@ -158,8 +158,8 @@ dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
 - `--radius`: Search radius in meters (optional, default: 100.0)
 - `--output`: Output CSV file name (optional, default: positions.csv)
 - `--player`: Player name to filter by (optional, alternative to coordinate search)
-- `--start-date`: Start date in YYYY-MM-DD format (optional)
-- `--end-date`: End date in YYYY-MM-DD format (optional)
+- `--start-date`: Start date in D.M.YYYY format (e.g., 01.06.2023) (optional)
+- `--end-date`: End date in D.M.YYYY format (e.g., 30.06.2023) (optional)
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
 

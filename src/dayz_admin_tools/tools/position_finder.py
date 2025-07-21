@@ -285,16 +285,7 @@ class PositionFinder(FileBasedTool):
                 # Parse the D.M.YYYY format
                 file_date_obj = datetime.strptime(file_date_str, "%d.%m.%Y")
             except ValueError:
-                # Fallback to other formats for backward compatibility
-                try:
-                    # Try D.M.YY format
-                    file_date_obj = datetime.strptime(file_date_str, "%d.%m.%y")
-                except ValueError:
-                    try:
-                        # Try YYYY-MM-DD format
-                        file_date_obj = datetime.strptime(file_date_str, "%Y-%m-%d")
-                    except ValueError:
-                        continue
+                continue
             
             if (not start_date_obj or file_date_obj >= start_date_obj) and (not end_date_obj or file_date_obj <= end_date_obj):
                 filtered_results.append(result)

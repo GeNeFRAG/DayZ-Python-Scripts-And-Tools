@@ -32,7 +32,7 @@ The command-line interface provides easy access through the `dayz-download-logs`
 dayz-download-logs
 
 # Download logs from a specific date range
-dayz-download-logs --start-date 2025-06-10 --end-date 2025-06-17
+dayz-download-logs --start-date 10.06.2025 --end-date 17.06.2025
 
 # Download logs matching specific patterns
 dayz-download-logs --pattern "*.RPT" --pattern "*script*.ADM"
@@ -68,7 +68,7 @@ dayz-download-logs --verbose
 dayz-download-logs --filter-profile last_week
 
 # Save current filter settings as a profile
-dayz-download-logs --start-date 2025-06-01 --end-date 2025-06-07 --pattern "*.RPT" --save-filter weekly_rpt
+dayz-download-logs --start-date 01.06.2025 --end-date 07.06.2025 --pattern "*.RPT" --save-filter weekly_rpt
 
 # List all available filter profiles
 dayz-download-logs --list-filters
@@ -108,7 +108,7 @@ The dedicated filter profiles tool provides more detailed management capabilitie
 
 ```bash
 # Create a new filter profile
-dayz-log-filter-profiles create weekly_rpt --start-date 2025-06-01 --end-date 2025-06-07 --patterns "*.RPT" --description "Weekly RPT logs"
+dayz-log-filter-profiles create weekly_rpt --start-date 01.06.2025 --end-date 07.06.2025 --patterns "*.RPT" --description "Weekly RPT logs"
 
 # View a specific profile
 dayz-log-filter-profiles view weekly_rpt
@@ -193,8 +193,8 @@ Each filter profile is stored as a JSON file with this structure:
 {
   "name": "weekly_rpt",
   "description": "Weekly RPT logs for monitoring",
-  "start_date": "2025-06-01",
-  "end_date": "2025-06-07",
+  "start_date": "01.06.2025",
+  "end_date": "07.06.2025",
   "filename_patterns": ["*.RPT"],
   "created_at": "2025-06-08T15:30:00"
 }
@@ -227,8 +227,8 @@ from datetime import datetime, timedelta
 downloader = NitradoLogDownloader(config)
 result = downloader.run(
     output_dir="./logs/weekly",
-    start_date="2025-06-01",
-    end_date="2025-06-07",
+    start_date="01.06.2025",
+    end_date="07.06.2025",
     filename_patterns=["*crash*.RPT", "*script*.ADM"],
     latest_default=False,  # Disable default latest files download
     download_all=False
@@ -254,8 +254,8 @@ profile_manager.save_profile(
     name="error_logs",
     description="Logs containing error messages",
     filename_patterns=["*error*.RPT", "*crash*.ADM"],
-    start_date="2025-06-01",
-    end_date="2025-06-18"
+    start_date="01.06.2025",
+    end_date="18.06.2025"
 )
 
 # Load an existing profile
@@ -276,8 +276,8 @@ for profile in profiles:
 # Save current filter settings as a profile
 result = downloader.run(
     output_dir="./logs",
-    start_date="2025-06-01",
-    end_date="2025-06-07",
+    start_date="01.06.2025",
+    end_date="07.06.2025",
     filename_patterns=["*.RPT"],
     save_profile="weekly_rpt_logs"
 )

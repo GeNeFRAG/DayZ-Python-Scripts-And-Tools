@@ -93,8 +93,8 @@ class NitradoLogDownloader(DayZTool):
         Args:
             file_stats: List of file statistics
             output_dir: Directory to save the downloaded files
-            start_date: Start date in ISO format (YYYY-MM-DD)
-            end_date: End date in ISO format (YYYY-MM-DD)
+            start_date: Start date in D.M.YYYY format (e.g., 01.06.2023)
+            end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
             latest_default: If True, download 2 latest .RPT and 2 latest .ADM files when no other filters match
             download_all: If True, download all .RPT and .ADM files
@@ -128,9 +128,16 @@ class NitradoLogDownloader(DayZTool):
             # Apply date filters if provided
             if start_date or end_date:
                 try:
-                    # Convert start_date and end_date to datetime objects
-                    start_dt = datetime.fromisoformat(start_date + "T00:00:00") if start_date else datetime.min
-                    end_dt = datetime.fromisoformat(end_date + "T23:59:59") if end_date else datetime.max
+                    # Convert D.M.YYYY format to datetime objects
+                    start_dt = datetime.strptime(start_date, "%d.%m.%Y") if start_date else datetime.min
+                    end_dt = datetime.strptime(end_date, "%d.%m.%Y") if end_date else datetime.max
+                    
+                    # Set time components for proper range filtering
+                    if start_date:
+                        start_dt = start_dt.replace(hour=0, minute=0, second=0, microsecond=0)
+                    if end_date:
+                        end_dt = end_dt.replace(hour=23, minute=59, second=59, microsecond=999999)
+                    
                     logger.debug(f"Filtering files from {start_dt} to {end_dt}")
                     filtered_files = [
                         f for f in file_stats
@@ -139,7 +146,7 @@ class NitradoLogDownloader(DayZTool):
                     date_filtered = True
                     logger.info(f"Filtered files based on date range ({start_date or 'any'} to {end_date or 'any'}): {len(filtered_files)} files")
                 except ValueError as e:
-                    logger.error(f"Error parsing dates: {e}")
+                    logger.error(f"Error parsing dates. Use D.M.YYYY format (e.g., 01.06.2023): {e}")
                     return False
             
             # Apply filename patterns if provided
@@ -247,8 +254,8 @@ class NitradoLogDownloader(DayZTool):
         
         Args:
             profile_name: Name to save the profile as
-            start_date: Start date in ISO format (YYYY-MM-DD)
-            end_date: End date in ISO format (YYYY-MM-DD)
+            start_date: Start date in D.M.YYYY format (e.g., 01.06.2023)
+            end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
             description: Optional description of the profile
             
@@ -288,8 +295,8 @@ class NitradoLogDownloader(DayZTool):
         
         Args:
             output_dir: Directory to save the downloaded files. If None, uses general.output_path from config.
-            start_date: Start date in ISO format (YYYY-MM-DD)
-            end_date: End date in ISO format (YYYY-MM-DD)
+            start_date: Start date in D.M.YYYY format (e.g., 01.06.2023)
+            end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
             filter_profile: Name of a saved filter profile to apply
             latest_default: If True, download 2 latest .RPT and 2 latest .ADM files when no other filters match
@@ -374,11 +381,11 @@ def main():
     filter_group = parser.add_argument_group('Filter Options')
     filter_group.add_argument(
         "--start-date",
-        help="Start date for log files (YYYY-MM-DD)",
+        help="Start date for log files (D.M.YYYY format, e.g., 01.06.2023)",
     )
     filter_group.add_argument(
         "--end-date",
-        help="End date for log files (YYYY-MM-DD)",
+        help="End date for log files (D.M.YYYY format, e.g., 30.06.2023)",
     )
     filter_group.add_argument(
         "--pattern",

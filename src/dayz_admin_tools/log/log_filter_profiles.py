@@ -61,8 +61,8 @@ class LogFilterProfile(JSONTool):
         
         Args:
             name: Name for the profile
-            start_date: Start date (YYYY-MM-DD)
-            end_date: End date (YYYY-MM-DD)
+            start_date: Start date (D.M.YYYY format, e.g., 01.06.2023)
+            end_date: End date (D.M.YYYY format, e.g., 30.06.2023)
             filename_patterns: List of filename patterns
             description: Optional description of the profile
             
@@ -165,7 +165,7 @@ class LogFilterProfile(JSONTool):
         """Create a set of common filter profiles if they don't already exist."""
         # Yesterday's logs
         yesterday = datetime.now() - timedelta(days=1)
-        yesterday_str = yesterday.strftime("%Y-%m-%d")
+        yesterday_str = yesterday.strftime("%d.%m.%Y")
         self.save_profile(
             "yesterday",
             start_date=yesterday_str,
@@ -175,8 +175,8 @@ class LogFilterProfile(JSONTool):
         
         # Last week
         week_ago = datetime.now() - timedelta(days=7)
-        week_ago_str = week_ago.strftime("%Y-%m-%d")
-        today = datetime.now().strftime("%Y-%m-%d")
+        week_ago_str = week_ago.strftime("%d.%m.%Y")
+        today = datetime.now().strftime("%d.%m.%Y")
         self.save_profile(
             "last_week",
             start_date=week_ago_str,
@@ -212,8 +212,8 @@ def main():
     # Create profile command
     create_parser = subparsers.add_parser('create', help='Create a new profile')
     create_parser.add_argument('name', help='Name for the profile')
-    create_parser.add_argument('--start-date', help='Start date (YYYY-MM-DD)')
-    create_parser.add_argument('--end-date', help='End date (YYYY-MM-DD)')
+    create_parser.add_argument('--start-date', help='Start date (D.M.YYYY format, e.g., 01.06.2023)')
+    create_parser.add_argument('--end-date', help='End date (D.M.YYYY format, e.g., 30.06.2023)')
     create_parser.add_argument('--patterns', help='Comma-separated list of filename patterns')
     create_parser.add_argument('--description', help='Description of the profile')
     

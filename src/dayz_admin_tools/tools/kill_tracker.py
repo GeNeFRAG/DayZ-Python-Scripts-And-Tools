@@ -274,12 +274,12 @@ def main():
     )
     parser.add_argument(
         "--start", 
-        help="Start date and time in YYYY-MM-DD HH:MM:SS format.", 
+        help="Start date and time in D.M.YYYY HH:MM:SS format (e.g., 01.06.2023 14:30:00).", 
         type=str
     )
     parser.add_argument(
         "--end", 
-        help="End date and time in YYYY-MM-DD HH:MM:SS format.", 
+        help="End date and time in D.M.YYYY HH:MM:SS format (e.g., 30.06.2023 23:59:59).", 
         type=str
     )
     
@@ -292,8 +292,20 @@ def main():
         config = KillTracker.load_config(args.profile)
         
         # Parse start and end datetimes
-        start_datetime = datetime.strptime(args.start, "%Y-%m-%d %H:%M:%S") if args.start else None
-        end_datetime = datetime.strptime(args.end, "%Y-%m-%d %H:%M:%S") if args.end else None
+        start_datetime = None
+        end_datetime = None
+        
+        if args.start:
+            try:
+                start_datetime = datetime.strptime(args.start, "%d.%m.%Y %H:%M:%S")
+            except ValueError:
+                raise ValueError(f"Invalid start date format. Use D.M.YYYY HH:MM:SS format (e.g., 01.06.2023 14:30:00)")
+        
+        if args.end:
+            try:
+                end_datetime = datetime.strptime(args.end, "%d.%m.%Y %H:%M:%S")
+            except ValueError:
+                raise ValueError(f"Invalid end date format. Use D.M.YYYY HH:MM:SS format (e.g., 30.06.2023 23:59:59)")
 
         # Initialize and run tracker
         tracker = KillTracker(config)

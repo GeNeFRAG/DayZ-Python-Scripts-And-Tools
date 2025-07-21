@@ -106,8 +106,8 @@ downloader = NitradoLogDownloader(config)
 # Download logs using various filtering options
 result = downloader.run(
     output_dir="./logs",
-    start_date="2025-05-01",
-    end_date="2025-05-31",
+    start_date="01.05.2025",
+    end_date="31.05.2025",
     filename_patterns=["*.RPT", "*.ADM"]
 )
 ```

@@ -145,7 +145,7 @@ Analyze server logs for useful information:
 
 ```bash
 # Download logs from Nitrado server
-dayz-download-logs --start-date 2025-06-10 --end-date 2025-06-17
+dayz-download-logs --start-date 10.06.2025 --end-date 17.06.2025
 
 # Find player positions in logs
 dayz-position-finder --player "SurvivorName" --target_x 7500 --target_y 8500 --radius 100
@@ -154,7 +154,7 @@ dayz-position-finder --player "SurvivorName" --target_x 7500 --target_y 8500 --r
 dayz-duping-detector --proximity-threshold 10 --time-threshold 30
 
 # Track player kills
-dayz-kill-tracker --start "2025-05-01 00:00:00" --end "2025-05-31 23:59:59"
+dayz-kill-tracker --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
 ```
 
 ### JSON Configuration
