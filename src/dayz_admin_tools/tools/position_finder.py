@@ -95,7 +95,7 @@ class PositionFinder(FileBasedTool):
             file_path: Path to the log file
             
         Returns:
-            Date string in YYYY-MM-DD format or "Unknown date" if not found
+            Date string in D.M.YY format or "Unknown date" if not found
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
@@ -104,7 +104,13 @@ class PositionFinder(FileBasedTool):
                 fourth_line = file.readline().strip()
                 date_match = re.search(r'AdminLog started on (\d{4}-\d{2}-\d{2})', fourth_line)
                 if date_match:
-                    return date_match.group(1)
+                    # Parse the date and reformat to D.M.YY
+                    date_str = date_match.group(1)
+                    try:
+                        date_obj = datetime.strptime(date_str, "%Y-%m-%d")
+                        return date_obj.strftime("%d.%m.%y")
+                    except ValueError:
+                        return date_str  # Fallback to original format if parsing fails
         except Exception as e:
             logger.error(f"Error extracting date from file {file_path}: {e}")
         return "Unknown date"
@@ -274,7 +280,16 @@ class PositionFinder(FileBasedTool):
             file_date_str = result[2]
             if file_date_str == "Unknown date":
                 continue
-            file_date_obj = datetime.strptime(file_date_str, "%Y-%m-%d")
+            
+            try:
+                # Parse the D.M.YY format
+                file_date_obj = datetime.strptime(file_date_str, "%d.%m.%y")
+            except ValueError:
+                # Fallback to YYYY-MM-DD format for backward compatibility
+                try:
+                    file_date_obj = datetime.strptime(file_date_str, "%Y-%m-%d")
+                except ValueError:
+                    continue
             
             if (not start_date_obj or file_date_obj >= start_date_obj) and (not end_date_obj or file_date_obj <= end_date_obj):
                 filtered_results.append(result)
