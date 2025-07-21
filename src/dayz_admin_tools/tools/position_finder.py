@@ -95,7 +95,7 @@ class PositionFinder(FileBasedTool):
             file_path: Path to the log file
             
         Returns:
-            Date string in D.M.YY format or "Unknown date" if not found
+            Date string in D.M.YYYY format or "Unknown date" if not found
         """
         try:
             with open(file_path, 'r', encoding='utf-8') as file:
@@ -104,11 +104,11 @@ class PositionFinder(FileBasedTool):
                 fourth_line = file.readline().strip()
                 date_match = re.search(r'AdminLog started on (\d{4}-\d{2}-\d{2})', fourth_line)
                 if date_match:
-                    # Parse the date and reformat to D.M.YY
+                    # Parse the date and reformat to D.M.YYYY
                     date_str = date_match.group(1)
                     try:
                         date_obj = datetime.strptime(date_str, "%Y-%m-%d")
-                        return date_obj.strftime("%d.%m.%y")
+                        return date_obj.strftime("%d.%m.%Y")
                     except ValueError:
                         return date_str  # Fallback to original format if parsing fails
         except Exception as e:
@@ -263,8 +263,8 @@ class PositionFinder(FileBasedTool):
         
         Args:
             results: List of result tuples
-            start_date: Start date in YYYY-MM-DD format (optional)
-            end_date: End date in YYYY-MM-DD format (optional)
+            start_date: Start date in D.M.YYYY format (optional)
+            end_date: End date in D.M.YYYY format (optional)
         
         Returns:
             Filtered list of result tuples
@@ -273,8 +273,8 @@ class PositionFinder(FileBasedTool):
             return results
         
         filtered_results = []
-        start_date_obj = datetime.strptime(start_date, "%Y-%m-%d") if start_date else None
-        end_date_obj = datetime.strptime(end_date, "%Y-%m-%d") if end_date else None
+        start_date_obj = datetime.strptime(start_date, "%d.%m.%Y") if start_date else None
+        end_date_obj = datetime.strptime(end_date, "%d.%m.%Y") if end_date else None
         
         for result in results:
             file_date_str = result[2]
@@ -282,14 +282,19 @@ class PositionFinder(FileBasedTool):
                 continue
             
             try:
-                # Parse the D.M.YY format
-                file_date_obj = datetime.strptime(file_date_str, "%d.%m.%y")
+                # Parse the D.M.YYYY format
+                file_date_obj = datetime.strptime(file_date_str, "%d.%m.%Y")
             except ValueError:
-                # Fallback to YYYY-MM-DD format for backward compatibility
+                # Fallback to other formats for backward compatibility
                 try:
-                    file_date_obj = datetime.strptime(file_date_str, "%Y-%m-%d")
+                    # Try D.M.YY format
+                    file_date_obj = datetime.strptime(file_date_str, "%d.%m.%y")
                 except ValueError:
-                    continue
+                    try:
+                        # Try YYYY-MM-DD format
+                        file_date_obj = datetime.strptime(file_date_str, "%Y-%m-%d")
+                    except ValueError:
+                        continue
             
             if (not start_date_obj or file_date_obj >= start_date_obj) and (not end_date_obj or file_date_obj <= end_date_obj):
                 filtered_results.append(result)
@@ -464,7 +469,7 @@ Examples:
   dayz-position-finder --player "SurvivorName"
   
   # Filter by date range and use specific output file
-  dayz-position-finder --player "SurvivorName" --start-date 2023-06-01 --end-date 2023-06-30 --output player_positions.csv
+  dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
   
   # Use configuration profile
   dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
@@ -476,8 +481,8 @@ Examples:
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
     parser.add_argument('--output', default='positions.csv', help='Output CSV file name (default: positions.csv)')
     parser.add_argument('--player', help='Player name to filter by')
-    parser.add_argument('--start-date', help='Start date in YYYY-MM-DD format')
-    parser.add_argument('--end-date', help='End date in YYYY-MM-DD format')
+    parser.add_argument('--start-date', help='Start date in D.M.YYYY format (e.g., 01.06.2023)')
+    parser.add_argument('--end-date', help='End date in D.M.YYYY format (e.g., 30.06.2023)')
     
     # For backward compatibility
     parser.add_argument('file_pattern_pos', nargs='?', help='File pattern (positional argument, deprecated)')
