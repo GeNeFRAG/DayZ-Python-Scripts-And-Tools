@@ -136,10 +136,10 @@ Locates player positions in DayZ server logs, allowing administrators to track p
 **Usage**:
 ```bash
 # Find positions near coordinates using default *.ADM pattern
-dayz-position-finder --target_x 7500 --target_y 8500 --radius 100
+dayz-position-finder --target-x 7500 --target-y 8500 --radius 100
 
 # Find positions near coordinates with specific file pattern
-dayz-position-finder --file_pattern "*.ADM" --target_x 7500 --target_y 8500 --radius 100
+dayz-position-finder --file_pattern "*.ADM" --target-x 7500 --target-y 8500 --radius 100
 
 # Find positions for a specific player
 dayz-position-finder --player "SurvivorName"
@@ -148,13 +148,13 @@ dayz-position-finder --player "SurvivorName"
 dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
 
 # Use configuration profile
-dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
+dayz-position-finder --profile myserver --target-x 7500 --target-y 8500
 ```
 
 **Parameters**:
 - `--file_pattern`: File pattern to search (e.g. "*.ADM") (optional, uses default "*.ADM" pattern if not specified)
-- `--target_x`: Target X coordinate for location-based search (required unless using --player)
-- `--target_y`: Target Y coordinate for location-based search (required unless using --player)
+- `--target-x`: Target X coordinate for location-based search (required unless using --player)
+- `--target-y`: Target Y coordinate for location-based search (required unless using --player)
 - `--radius`: Search radius in meters (optional, default: 100.0)
 - `--output`: Output CSV file name (optional, default: positions.csv)
 - `--player`: Player name to filter by (optional, alternative to coordinate search)

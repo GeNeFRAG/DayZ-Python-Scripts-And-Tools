@@ -148,7 +148,7 @@ Analyze server logs for useful information:
 dayz-download-logs --start-date 10.06.2025 --end-date 17.06.2025
 
 # Find player positions in logs
-dayz-position-finder --player "SurvivorName" --target_x 7500 --target_y 8500 --radius 100
+dayz-position-finder --player "SurvivorName" --target-x 7500 --target-y 8500 --radius 100
 
 # Detect possible duping activity
 dayz-duping-detector --proximity-threshold 10 --time-threshold 30

@@ -428,7 +428,7 @@ class PositionFinder(FileBasedTool):
             logger.info(f"Found {len(results)} positions for player: {args.player}.")
         else:
             if args.target_x is None or args.target_y is None:
-                logger.error("Target coordinates (--target_x and --target_y) are required when not searching by player name.")
+                logger.error("Target coordinates (--target-x and --target-y) are required when not searching by player name.")
                 return
                 
             results = self.find_nearby_positions(args.file_pattern, args.target_x, args.target_y, args.radius)
@@ -451,10 +451,10 @@ def main():
         epilog='''
 Examples:
   # Find positions near coordinates using default *.ADM pattern
-  dayz-position-finder --target_x 7500 --target_y 8500 --radius 100
+  dayz-position-finder --target-x 7500 --target-y 8500 --radius 100
   
   # Find positions near coordinates with specific file pattern
-  dayz-position-finder --file_pattern "*.ADM" --target_x 7500 --target_y 8500 --radius 100
+  dayz-position-finder --file_pattern "*.ADM" --target-x 7500 --target-y 8500 --radius 100
   
   # Find positions for a specific player
   dayz-position-finder --player "SurvivorName"
@@ -463,12 +463,12 @@ Examples:
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
   
   # Use configuration profile
-  dayz-position-finder --profile myserver --target_x 7500 --target_y 8500
+  dayz-position-finder --profile myserver --target-x 7500 --target-y 8500
 ''')
     
     parser.add_argument('--file_pattern', help='File pattern to search (e.g. "*.ADM"). If not specified, the default "*.ADM" pattern will be used.')
-    parser.add_argument('--target_x', type=float, help='Target X coordinate for location-based search')
-    parser.add_argument('--target_y', type=float, help='Target Y coordinate for location-based search')
+    parser.add_argument('--target-x', type=float, help='Target X coordinate for location-based search')
+    parser.add_argument('--target-y', type=float, help='Target Y coordinate for location-based search')
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
     parser.add_argument('--output', default='positions.csv', help='Output CSV file name (default: positions.csv)')
     parser.add_argument('--player', help='Player name to filter by')
