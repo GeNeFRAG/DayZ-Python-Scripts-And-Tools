@@ -197,7 +197,7 @@ test_log_tools() {
     echo -e "${BLUE}=============================================${NC}"
     echo -e "${BLUE}Running test: dayz-download-logs: save filter${NC}"
     echo -e "${BLUE}=============================================${NC}"
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --start-date 2025-06-15 --end-date 2025-06-16 --pattern *.ADM --save-filter custom --profile $CONFIG_PROFILE
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-download-logs --start-date 15.06.2025 --end-date 16.06.2025 --pattern *.ADM --save-filter custom --profile $CONFIG_PROFILE
     
     echo ""
     echo -e "${BLUE}==========================================================${NC}"
@@ -235,14 +235,14 @@ test_tools() {
     echo -e "${BLUE}Running test: dayz-kill-tracker${NC}"
     echo -e "${BLUE}===============================${NC}"
     # Execute kill_tracker directly with correctly quoted date parameters
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-kill-tracker --start "2025-06-15 00:00:00" --end "2025-06-15 23:59:00" --profile $CONFIG_PROFILE --console
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-kill-tracker --start "15.06.2025 00:00:00" --end "15.06.2025 23:59:00" --profile $CONFIG_PROFILE --console
 
     echo ""
     echo -e "${BLUE}==================================${NC}"
     echo -e "${BLUE}Running test: dayz-position-finder${NC}"
     echo -e "${BLUE}==================================${NC}"
     # Execute dayz-position-finder with correctly quoted date parameters
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-position-finder "*.ADM" --target_x 12153 --target_y 13731 --radius 100 --profile $CONFIG_PROFILE
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-position-finder "*.ADM" --target-x 12153 --target-y 13731 --radius 100 --profile $CONFIG_PROFILE
 
     echo ""
     echo -e "${BLUE}==================================${NC}"
@@ -257,6 +257,14 @@ test_tools() {
     echo -e "${BLUE}==================================${NC}"
     # Execute dayz-position-finder with correctly quoted date parameters
     PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-search-overtime --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}==================================${NC}"
+    echo -e "${BLUE}Running test: dayz-player-list-manager${NC}"
+    echo -e "${BLUE}==================================${NC}"
+    # Execute dayz-player-list-manager with correctly quoted date parameters
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-player-list-manager whitelist add --identifiers "BIGGFISH35" --profile $CONFIG_PROFILE
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-player-list-manager whitelist remove --identifiers "BIGGFISH35" --profile $CONFIG_PROFILE
 }
 
 # Test XML tools
