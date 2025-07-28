@@ -15,38 +15,67 @@ All tools in this package inherit from the `DayZTool` base class and follow a co
 **Script**: `player_list_manager.py`  
 **CLI Command**: `dayz-player-list-manager`
 
-Manages player lists (banlist, whitelist, and priority list) via Nitrado API.
-This tool provides comprehensive functionality for managing player access control lists.
+Manages player lists (banlist, whitelist, and priority list) via Nitrado API and analyzes banned player connection attempts from RPT log files.
 
 **Features**:
 - Retrieve current player lists from the server
 - Add/remove players from banlist, whitelist, or priority list
 - Export player lists to CSV format
-- Import players from CSV files with flexible column mapping
+- Import players from text files (one ID per line)
 - Batch operations for managing multiple players at once
+- **NEW: Monitor banned players attempting to connect to the server**
+- **NEW: Analyze RPT log files for security violations**
+- **NEW: Export banned connection attempts to CSV for further analysis**
 - Full Nitrado API integration
 
 **Usage**:
+
+*Player List Management:*
 ```bash
 # List all banned players
-dayz-player-list-manager banlist list
+dayz-player-list-manager manage banlist list
 
 # Add players to banlist
-dayz-player-list-manager banlist add --identifiers player1 player2 player3
+dayz-player-list-manager manage banlist add --identifiers player1 player2 player3
 
 # Remove players from whitelist
-dayz-player-list-manager whitelist remove --identifiers player1 player2
+dayz-player-list-manager manage whitelist remove --identifiers player1 player2
 
 # Export priority list to CSV
-dayz-player-list-manager priority export --output-file priority.csv
+dayz-player-list-manager manage priority export --output-file priority.csv
 
-# Import players from CSV to banlist
-dayz-player-list-manager banlist import --csv-file banned_players.csv --identifier-column username
+# Import players from text file to banlist
+dayz-player-list-manager manage banlist import --input-file banned_players.txt
 ```
 
+*Banned Connection Attempts Analysis:*
+```bash
+# Check for banned players trying to connect (display results)
+dayz-player-list-manager banned-attempts check --rpt-pattern "logs/*.RPT"
+
+# Export banned connection attempts to CSV
+dayz-player-list-manager banned-attempts export --rpt-pattern "logs/*.RPT" --output-file security_violations.csv
+
+# Monitor specific RPT files
+dayz-player-list-manager banned-attempts check --rpt-pattern "/path/to/specific/log.RPT"
+```
+
+**Banned Connection Detection**:
+The tool automatically identifies log entries matching the pattern:
+```
+14:09:13.649 Player Bogumilwolf (1596804848) kicked from server: 7 (You were banned.)
+```
+
+Each detected attempt includes:
+- Timestamp of the connection attempt
+- Player name and ID
+- Source log file and line number
+- Full raw log line for reference
+
 **Configuration Requirements**:
-- Nitrado API token in secrets configuration
-- Service ID for the game server
+- Nitrado API token in secrets configuration (for list management)
+- Service ID for the game server (for list management)
+- Log path configuration (for banned attempts analysis)
 - SSL verification settings (optional)
 
 ### Kill Tracker

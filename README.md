@@ -71,7 +71,7 @@ Configuration options are defined in `src/config/profiles/default.json`. You can
 
 ### Admin Tools
 
-- **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API (`dayz-player-list-manager`)
+- **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API and analyze banned connection attempts from RPT logs (`dayz-player-list-manager`)
 
 ### Log Tools
 
@@ -121,22 +121,28 @@ Manage player access and permissions via Nitrado API:
 
 ```bash
 # Export current ban list to CSV
-dayz-player-list-manager banlist export
+dayz-player-list-manager manage banlist export
 
 # Add players to ban list
-dayz-player-list-manager banlist add --identifiers player1 player2 griefer123
+dayz-player-list-manager manage banlist add --identifiers player1 player2 griefer123
 
 # Remove players from ban list  
-dayz-player-list-manager banlist remove --identifiers reformed_player
+dayz-player-list-manager manage banlist remove --identifiers reformed_player
 
 # Import whitelist from CSV file
-dayz-player-list-manager whitelist import --csv-file new_admins.csv
+dayz-player-list-manager manage whitelist import --input-file new_admins.txt
 
 # Export priority/admin list
-dayz-player-list-manager priority export --output priority_list.csv
+dayz-player-list-manager manage priority export --output-file priority_list.csv
 
 # Add new admins to priority list
-dayz-player-list-manager priority add --identifiers admin1 moderator2
+dayz-player-list-manager manage priority add --identifiers admin1 moderator2
+
+# Check for banned players trying to connect (security monitoring)
+dayz-player-list-manager banned-attempts check --rpt-pattern "logs/*.RPT"
+
+# Export banned connection attempts to CSV for analysis
+dayz-player-list-manager banned-attempts export --rpt-pattern "logs/*.RPT" --output-file banned_attempts.csv
 ```
 
 ### Log Analysis
