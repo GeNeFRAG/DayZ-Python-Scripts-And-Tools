@@ -73,6 +73,8 @@ The tool supports configuration-based defaults:
 - `object_spawner.default_filename`: Default output filename (e.g., "16355842-shop.json")
 
 **Features**:
+- Generate spawner entries from item specifications
+- Create empty spawner JSON templates
 - Use default coordinates from configuration or specify custom coordinates per item
 - Validate items against types.xml (optional)
 - Set custom orientation (yaw, pitch, roll)
@@ -81,31 +83,41 @@ The tool supports configuration-based defaults:
 - Output to configured default filename or custom output file
 - Support for both short format (uses defaults) and full format specifications
 
+**Commands**:
+- `generate`: Create spawner entries from item specifications
+- `empty`: Create an empty spawner JSON template
+
 **Usage**:
 ```bash
-# Short format using default coordinates from config: item:quantity
-dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5" --output spawner.json
+# Generate entries - Short format using default coordinates from config
+dayz-generate-spawner-entries generate "Barrel_Green:2" "AKM:5" --output spawner.json
 
-# Full format specifying coordinates: item:quantity:x:y:z
-dayz-generate-spawner-entries "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
+# Generate entries - Full format specifying coordinates
+dayz-generate-spawner-entries generate "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
 
-# Mixed format - some with defaults, some with custom coordinates
-dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5:7510:300:7610" --output spawner.json
+# Generate entries - Mixed format
+dayz-generate-spawner-entries generate "Barrel_Green:2" "AKM:5:7510:300:7610" --output spawner.json
 
-# Use default filename from config (no --output specified)
-dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5"
+# Generate entries - Use default filename from config
+dayz-generate-spawner-entries generate "Barrel_Green:2" "AKM:5"
 
-# With types.xml validation and custom orientation
-dayz-generate-spawner-entries --types_xml types.xml "Land_Wreck_Ikarus:1:7500:300:7600" --ypr "90,0,0" --output wrecks.json
+# Create empty template with default filename from config
+dayz-generate-spawner-entries empty
+
+# Create empty template with custom filename
+dayz-generate-spawner-entries empty --output my-template.json
+
+# Print empty template to stdout
+dayz-generate-spawner-entries empty --print
+
+# Advanced generation with custom settings
+dayz-generate-spawner-entries generate --types_xml types.xml "Land_Wreck_Ikarus:1:7500:300:7600" --ypr "90,0,0" --output wrecks.json
 
 # With custom settings and printing to stdout
-dayz-generate-spawner-entries "Barrel_Green:1:7500:300:7600" --scale 1.5 --enableCEPersistence 1 --customString "mymod" --print
-
-# Use configured types.xml path and default coordinates
-dayz-generate-spawner-entries --profile myserver "AKM:3"
+dayz-generate-spawner-entries generate "Barrel_Green:1:7500:300:7600" --scale 1.5 --enableCEPersistence 1 --customString "mymod" --print
 ```
 
-**Parameters**:
+**Generate Command Parameters**:
 - `items`: Item(s) in format `<item>:<amount>` (uses default coordinates) or `<item>:<amount>:<x>:<y>:<z>` (required, can specify multiple)
 - `--types_xml`: Path to types.xml (optional, uses `paths.types_file` from config if not specified)
 - `--ypr`: YPR (yaw, pitch, roll) as comma-separated values (optional, default: "0.0, -0.0, -0.0")
@@ -114,6 +126,12 @@ dayz-generate-spawner-entries --profile myserver "AKM:3"
 - `--customString`: Custom string attribute (optional, default: empty)
 - `--output, -o`: Output file (optional, uses `object_spawner.default_filename` from config if not specified)
 - `--print`: Print the generated JSON to stdout (optional)
+
+**Empty Command Parameters**:
+- `--output, -o`: Output file (optional, uses `object_spawner.default_filename` from config if not specified)
+- `--print`: Print the empty JSON structure to stdout (optional)
+
+**Common Parameters**:
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
 
@@ -124,6 +142,10 @@ from dayz_admin_tools.json.generate_spawner_entries import GenerateSpawnerEntrie
 # Load configuration with default coordinates and filename
 config = GenerateSpawnerEntries.load_config("myserver")
 generator = GenerateSpawnerEntries(config)
+
+# Create empty JSON template
+empty_result = generator.create_empty_json()
+print(f"Empty template created: {empty_result['output_file']}")
 
 # Items using default coordinates from config
 short_items = [("Barrel_Green", 2, [10106.6, 8.5, 1696.5])]  # Parsed from "Barrel_Green:2"

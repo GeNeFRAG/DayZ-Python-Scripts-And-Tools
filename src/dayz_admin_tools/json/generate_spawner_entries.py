@@ -8,6 +8,10 @@ Supports configuration-based defaults:
 - object_spawner.default_coordinates: Default x:y:z coordinates (e.g., "10106.6:8.5:1696.5")
 - object_spawner.default_filename: Default output filename (e.g., "16355842-shop.json")
 
+Commands:
+- generate: Create spawner entries from item specifications
+- empty: Create an empty spawner JSON template with just {"Objects": []}
+
 Items can be specified as:
 - item:amount - Uses default coordinates from configuration
 - item:amount:x:y:z - Uses specific coordinates
@@ -247,6 +251,54 @@ class GenerateSpawnerEntries(JSONTool):
         
         return return_result
 
+    def create_empty_json(self, output_file: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Create an empty DayZ object spawner JSON file with the basic structure.
+        
+        Args:
+            output_file: Optional path for saving the output. If None, a default filename
+                        will be used from config or generated with timestamp.
+            
+        Returns:
+            Dictionary with the created empty structure and metadata
+        """
+        # Create empty structure
+        result = {"Objects": []}
+        
+        # Determine output file
+        if output_file:
+            # If an absolute path is provided, use it as is
+            if os.path.isabs(output_file):
+                target_file = output_file
+            else:
+                # Otherwise, put it in the output directory
+                target_file = os.path.join(self.output_dir, output_file)
+        else:
+            # Try to use the default filename from config, otherwise generate timestamped filename
+            default_filename = self.get_config('object_spawner.default_filename')
+            if default_filename:
+                target_file = os.path.join(self.output_dir, default_filename)
+            else:
+                # Generate default filename with timestamp using the base class utility method
+                default_filename = self.generate_timestamped_filename(
+                    "empty_spawner", "json", suffix="template"
+                )
+                target_file = os.path.join(self.output_dir, default_filename)
+        
+        # Ensure output directory exists
+        self.ensure_dir(os.path.dirname(target_file))
+            
+        # Write the file
+        self.write_json(result, target_file, indent=2)
+        logger.info(f"Empty spawner JSON template created: {target_file}")
+        
+        # Create result dictionary with metadata
+        return_result = result.copy()
+        return_result["output_file"] = target_file
+        return_result["timestamp"] = self.get_timestamp_str()
+        
+        return return_result
+
 
 def parse_item_amount_pos(s: str) -> Tuple[str, int, List[float]]:
     """
@@ -296,72 +348,112 @@ def main():
     parser = argparse.ArgumentParser(
         description="Generate DayZ object spawner JSON entries from command line."
     )
-    parser.add_argument("--types_xml", help="Path to types.xml (defaults to path.types_file from config)")
-    parser.add_argument("items", nargs='+', type=str, 
-                      help="Item(s) in format <item>:<amount> or <item>:<amount>:<x>:<y>:<z>")
-    parser.add_argument("--ypr", default="0.0, -0.0, -0.0", help="YPR as comma-separated values (default: '0.0, -0.0, -0.0')")
-    parser.add_argument("--scale", type=float, default=1.0, help="Scale (default: 1.0)")
-    parser.add_argument("--enableCEPersistence", type=int, default=0, 
-                      help="enableCEPersistence (default: 0)")
-    parser.add_argument("--customString", default="", 
-                      help="customString (default: empty)")
-    parser.add_argument("--output", "-o", default=None, 
-                      help="Output file (if not specified, default filename from config will be used)")
-    parser.add_argument("--print", action="store_true",
-                      help="Print the generated JSON to stdout")
     
-    # Add standard arguments from base class
+    # Add subcommands
+    subparsers = parser.add_subparsers(dest='command', help='Available commands')
+    
+    # Generate entries subcommand
+    generate_parser = subparsers.add_parser('generate', help='Generate spawner entries from items')
+    generate_parser.add_argument("--types_xml", help="Path to types.xml (defaults to path.types_file from config)")
+    generate_parser.add_argument("items", nargs='+', type=str, 
+                          help="Item(s) in format <item>:<amount> or <item>:<amount>:<x>:<y>:<z>")
+    generate_parser.add_argument("--ypr", default="0.0, -0.0, -0.0", help="YPR as comma-separated values (default: '0.0, -0.0, -0.0')")
+    generate_parser.add_argument("--scale", type=float, default=1.0, help="Scale (default: 1.0)")
+    generate_parser.add_argument("--enableCEPersistence", type=int, default=0, 
+                          help="enableCEPersistence (default: 0)")
+    generate_parser.add_argument("--customString", default="", 
+                          help="customString (default: empty)")
+    generate_parser.add_argument("--output", "-o", default=None, 
+                          help="Output file (if not specified, default filename from config will be used)")
+    generate_parser.add_argument("--print", action="store_true",
+                          help="Print the generated JSON to stdout")
+    
+    # Create empty file subcommand
+    empty_parser = subparsers.add_parser('empty', help='Create an empty spawner JSON template')
+    empty_parser.add_argument("--output", "-o", default=None, 
+                       help="Output file (if not specified, default filename from config will be used)")
+    empty_parser.add_argument("--print", action="store_true",
+                       help="Print the empty JSON structure to stdout")
+    
+    # Add standard arguments from base class to main parser
     from ..base import DayZTool
     DayZTool.add_standard_arguments(parser)
-    args = parser.parse_args()
+    
+    # For backward compatibility, if no subcommand is provided but items are given, assume 'generate'
+    args, unknown = parser.parse_known_args()
+    if args.command is None and unknown:
+        # Rebuild args with 'generate' subcommand for backward compatibility
+        sys.argv.insert(1, 'generate')
+        args = parser.parse_args()
+    elif args.command is None:
+        parser.error("Please specify a command: 'generate' or 'empty'")
     
     # Load configuration using the static method from DayZTool
     config = DayZTool.load_config(args.profile)
     
-    # Create and run the tool
+    # Create the tool
     generator = GenerateSpawnerEntries(config)
     
-    # Parse items using the tool's method to get default coordinates from config
-    try:
-        parsed_items = [generator.parse_item_amount_pos(item) for item in args.items]
-    except ValueError as e:
-        logger.error(f"Error parsing items: {e}")
-        sys.exit(1)
-    
-    # Use types_xml from command line or from config
-    types_xml_path = args.types_xml if args.types_xml else generator.get_config('paths.types_file')
-    
-    if not types_xml_path:
-        logger.error("No types.xml path provided in command line or configuration")
-        sys.exit(1)
-    
-    # Use the run method which is required by the base class
-    result = generator.run(
-        types_xml_path,
-        parsed_items,
-        args.ypr,
-        args.scale,
-        args.enableCEPersistence,
-        args.customString,
-        args.output
-    )
-    
-    # Output result to console if requested
-    if args.print:
-        logger.info("Generated result:")
-        for line in json.dumps(result, indent=2).split('\n'):
-            logger.info(line)
-    else:
-        logger.info(f"Output saved to: {result['output_file']}")
-        logger.info(f"Output directory: {generator.output_dir}")
+    if args.command == 'generate':
+        # Parse items using the tool's method to get default coordinates from config
+        try:
+            parsed_items = [generator.parse_item_amount_pos(item) for item in args.items]
+        except ValueError as e:
+            logger.error(f"Error parsing items: {e}")
+            sys.exit(1)
         
-    # Show additional information if --console flag is used
-    if args.console:
-        logger.info("\nSummary:")
-        logger.info(f"Number of items processed: {len(parsed_items)}")
-        for item_name, amount, pos in parsed_items:
-            logger.info(f"  - {item_name}: {amount}x at position {pos}")
-        logger.info(f"Default coordinates from config: {generator.default_coordinates}")
+        # Use types_xml from command line or from config
+        types_xml_path = args.types_xml if args.types_xml else generator.get_config('paths.types_file')
+        
+        if not types_xml_path:
+            logger.error("No types.xml path provided in command line or configuration")
+            sys.exit(1)
+        
+        # Use the run method which is required by the base class
+        result = generator.run(
+            types_xml_path,
+            parsed_items,
+            args.ypr,
+            args.scale,
+            args.enableCEPersistence,
+            args.customString,
+            args.output
+        )
+        
+        # Output result to console if requested
+        if args.print:
+            logger.info("Generated result:")
+            for line in json.dumps(result, indent=2).split('\n'):
+                logger.info(line)
+        else:
+            logger.info(f"Output saved to: {result['output_file']}")
+            logger.info(f"Output directory: {generator.output_dir}")
+            
+        # Show additional information if --console flag is used
+        if args.console:
+            logger.info("\nSummary:")
+            logger.info(f"Number of items processed: {len(parsed_items)}")
+            for item_name, amount, pos in parsed_items:
+                logger.info(f"  - {item_name}: {amount}x at position {pos}")
+            logger.info(f"Default coordinates from config: {generator.default_coordinates}")
+    
+    elif args.command == 'empty':
+        # Create empty JSON file
+        result = generator.create_empty_json(args.output)
+        
+        # Output result to console if requested
+        if args.print:
+            logger.info("Empty JSON structure:")
+            for line in json.dumps({"Objects": []}, indent=2).split('\n'):
+                logger.info(line)
+        else:
+            logger.info(f"Empty spawner template created: {result['output_file']}")
+            logger.info(f"Output directory: {generator.output_dir}")
+            
+        # Show additional information if --console flag is used
+        if args.console:
+            logger.info(f"\nEmpty template created with default filename from config: {generator.get_config('object_spawner.default_filename')}")
+            logger.info(f"Default coordinates available: {generator.default_coordinates}")
 
 
 if __name__ == '__main__':
