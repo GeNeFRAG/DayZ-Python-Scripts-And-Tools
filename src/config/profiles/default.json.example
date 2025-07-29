@@ -31,6 +31,10 @@
       "hard_to_place": "LootRespawner\\] \\(PRIDummy\\) :: Item \\[\\d+\\] is hard to place, performance drops: \"(.*?)\""
     }
   },
+  "object_spawner": {
+    "default_filename": "16355842-shop.json",
+    "default_coordinates": "10106.6:8.5:1696.5"
+  },
   "paths": {
     "types_file": "/path/to/your/types.xml",
     "types_file_ref": "/path/to/your/types_ref.xml",

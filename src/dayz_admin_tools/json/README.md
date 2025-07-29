@@ -67,17 +67,33 @@ print(f"Optimal box size: {results['optimal_box']['dimensions']}")
 
 Creates DayZ object spawner JSON entries from specifications. Takes item names, quantities, and positions to generate properly formatted JSON that can be used directly in DayZ servers.
 
+**Configuration Support**:
+The tool supports configuration-based defaults:
+- `object_spawner.default_coordinates`: Default x:y:z coordinates (e.g., "10106.6:8.5:1696.5")
+- `object_spawner.default_filename`: Default output filename (e.g., "16355842-shop.json")
+
 **Features**:
+- Use default coordinates from configuration or specify custom coordinates per item
 - Validate items against types.xml (optional)
 - Set custom orientation (yaw, pitch, roll)
 - Configure item scale and Central Economy persistence flags
 - Add custom string attributes (for map/mod compatibility)
-- Output to JSON file or standard output for piping
+- Output to configured default filename or custom output file
+- Support for both short format (uses defaults) and full format specifications
 
 **Usage**:
 ```bash
-# Basic format: item:quantity:x:y:z
+# Short format using default coordinates from config: item:quantity
+dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5" --output spawner.json
+
+# Full format specifying coordinates: item:quantity:x:y:z
 dayz-generate-spawner-entries "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
+
+# Mixed format - some with defaults, some with custom coordinates
+dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5:7510:300:7610" --output spawner.json
+
+# Use default filename from config (no --output specified)
+dayz-generate-spawner-entries "Barrel_Green:2" "AKM:5"
 
 # With types.xml validation and custom orientation
 dayz-generate-spawner-entries --types_xml types.xml "Land_Wreck_Ikarus:1:7500:300:7600" --ypr "90,0,0" --output wrecks.json
@@ -85,18 +101,18 @@ dayz-generate-spawner-entries --types_xml types.xml "Land_Wreck_Ikarus:1:7500:30
 # With custom settings and printing to stdout
 dayz-generate-spawner-entries "Barrel_Green:1:7500:300:7600" --scale 1.5 --enableCEPersistence 1 --customString "mymod" --print
 
-# Use configured types.xml path
-dayz-generate-spawner-entries --profile myserver "AKM:3:7500:300:7600"
+# Use configured types.xml path and default coordinates
+dayz-generate-spawner-entries --profile myserver "AKM:3"
 ```
 
 **Parameters**:
-- `items`: Item(s) in format `<item>:<amount>:<x>:<y>:<z>` (required, can specify multiple)
+- `items`: Item(s) in format `<item>:<amount>` (uses default coordinates) or `<item>:<amount>:<x>:<y>:<z>` (required, can specify multiple)
 - `--types_xml`: Path to types.xml (optional, uses `paths.types_file` from config if not specified)
 - `--ypr`: YPR (yaw, pitch, roll) as comma-separated values (optional, default: "0.0, -0.0, -0.0")
 - `--scale`: Scale factor for objects (optional, default: 1.0)
 - `--enableCEPersistence`: Enable Central Economy persistence (optional, default: 0)
 - `--customString`: Custom string attribute (optional, default: empty)
-- `--output, -o`: Output file (optional, uses default filename in output directory if not specified)
+- `--output, -o`: Output file (optional, uses `object_spawner.default_filename` from config if not specified)
 - `--print`: Print the generated JSON to stdout (optional)
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
@@ -105,22 +121,27 @@ dayz-generate-spawner-entries --profile myserver "AKM:3:7500:300:7600"
 ```python
 from dayz_admin_tools.json.generate_spawner_entries import GenerateSpawnerEntries
 
-# Load configuration
+# Load configuration with default coordinates and filename
 config = GenerateSpawnerEntries.load_config("myserver")
 generator = GenerateSpawnerEntries(config)
+
+# Items using default coordinates from config
+short_items = [("Barrel_Green", 2, [10106.6, 8.5, 1696.5])]  # Parsed from "Barrel_Green:2"
+
+# Items with custom coordinates  
+full_items = [("AKM", 5, [7510, 300, 7610])]  # Parsed from "AKM:5:7510:300:7610"
 
 # Generate entries with custom parameters
 entries = generator.run(
     types_xml="types.xml",
-    items=["Barrel_Green:2:7500:300:7600", "AKM:5:7510:300:7610"],
+    items=short_items + full_items,
     ypr="0.0, -0.0, -0.0",
     scale=1.0,
     enable_ce_persistence=0,
     custom_string="",
-    output_file="spawner.json",
-    print_output=False
+    output_file=None  # Uses default filename from config
 )
-print(f"Generated {len(entries)} spawner entries")
+print(f"Generated {len(entries['Objects'])} spawner entries to {entries['output_file']}")
 ```
 
 ### Sum Items JSON
@@ -259,6 +280,10 @@ All JSON tools support these standard command-line parameters:
     "backup_directory": "backups",
     "log_level": "INFO",
     "debug": false
+  },
+  "object_spawner": {
+    "default_filename": "16355842-shop.json",
+    "default_coordinates": "10106.6:8.5:1696.5"
   }
 }
 ```

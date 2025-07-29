@@ -3,6 +3,14 @@ Generate Spawner Entries Tool
 
 Create DayZ object spawner JSON entries from command line inputs.
 Takes item names, quantities, and positions to generate formatted JSON entries.
+
+Supports configuration-based defaults:
+- object_spawner.default_coordinates: Default x:y:z coordinates (e.g., "10106.6:8.5:1696.5")
+- object_spawner.default_filename: Default output filename (e.g., "16355842-shop.json")
+
+Items can be specified as:
+- item:amount - Uses default coordinates from configuration
+- item:amount:x:y:z - Uses specific coordinates
 """
 
 import sys
@@ -39,6 +47,27 @@ class GenerateSpawnerEntries(JSONTool):
         
         # Item names from types.xml
         self.valid_items = set()
+        
+        # Parse default coordinates from config
+        self.default_coordinates = self._parse_default_coordinates()
+    
+    def _parse_default_coordinates(self) -> List[float]:
+        """
+        Parse default coordinates from configuration.
+        
+        Returns:
+            List of [x, y, z] coordinates from config, or [0.0, 0.0, 0.0] if not set
+        """
+        coord_str = self.get_config('object_spawner.default_coordinates', '0.0:0.0:0.0')
+        try:
+            parts = coord_str.split(':')
+            if len(parts) != 3:
+                logger.warning(f"Invalid default coordinates format '{coord_str}', using [0.0, 0.0, 0.0]")
+                return [0.0, 0.0, 0.0]
+            return [float(parts[0]), float(parts[1]), float(parts[2])]
+        except ValueError:
+            logger.warning(f"Could not parse default coordinates '{coord_str}', using [0.0, 0.0, 0.0]")
+            return [0.0, 0.0, 0.0]
     
     def run(self, types_xml_path: str, items: List[Tuple[str, int, List[float]]],
             ypr: str = "0.0, -0.0, -0.0", scale: float = 1.0, 
@@ -67,10 +96,11 @@ class GenerateSpawnerEntries(JSONTool):
     
     def parse_item_amount_pos(self, s: str) -> Tuple[str, int, List[float]]:
         """
-        Parse a string in the format <item>:<amount>:<x>:<y>:<z>.
+        Parse a string in the format <item>:<amount> or <item>:<amount>:<x>:<y>:<z>.
+        If coordinates are not provided, use default coordinates from config.
         
         Args:
-            s: String containing item, amount, and position data
+            s: String containing item, amount, and optionally position data
             
         Returns:
             Tuple of (item_name, amount, [x, y, z])
@@ -79,20 +109,24 @@ class GenerateSpawnerEntries(JSONTool):
             ValueError: If the format is invalid
         """
         parts = s.split(':')
-        if len(parts) != 5:
-            raise ValueError(f"Invalid item spec '{s}', must be <item>:<amount>:<x>:<y>:<z>")
-        
-        name, amount, x, y, z = parts
+        if len(parts) == 2:
+            # Use default coordinates
+            name, amount = parts
+            coords = self.default_coordinates
+        elif len(parts) == 5:
+            # Full specification with coordinates
+            name, amount, x, y, z = parts
+            try:
+                coords = [float(x), float(y), float(z)]
+            except ValueError:
+                raise ValueError(f"Invalid coordinates for item '{name}'")
+        else:
+            raise ValueError(f"Invalid item spec '{s}', must be <item>:<amount> or <item>:<amount>:<x>:<y>:<z>")
         
         if not amount.isdigit() or int(amount) < 1:
             raise ValueError(f"Invalid amount '{amount}' for item '{name}'")
-        
-        try:
-            x, y, z = float(x), float(y), float(z)
-        except ValueError:
-            raise ValueError(f"Invalid coordinates for item '{name}'")
             
-        return (name, int(amount), [x, y, z])
+        return (name, int(amount), coords)
     
     def load_types_xml(self, types_xml_path: str) -> None:
         """
@@ -188,11 +222,16 @@ class GenerateSpawnerEntries(JSONTool):
                 # Otherwise, put it in the output directory
                 target_file = os.path.join(self.output_dir, output_file)
         else:
-            # Generate default filename with timestamp using the base class utility method
-            default_filename = self.generate_timestamped_filename(
-                "spawner_entries", "json", suffix=f"{len(result['Objects'])}_items"
-            )
-            target_file = os.path.join(self.output_dir, default_filename)
+            # Try to use the default filename from config, otherwise generate timestamped filename
+            default_filename = self.get_config('object_spawner.default_filename')
+            if default_filename:
+                target_file = os.path.join(self.output_dir, default_filename)
+            else:
+                # Generate default filename with timestamp using the base class utility method
+                default_filename = self.generate_timestamped_filename(
+                    "spawner_entries", "json", suffix=f"{len(result['Objects'])}_items"
+                )
+                target_file = os.path.join(self.output_dir, default_filename)
         
         # Ensure output directory exists
         self.ensure_dir(os.path.dirname(target_file))
@@ -211,42 +250,55 @@ class GenerateSpawnerEntries(JSONTool):
 
 def parse_item_amount_pos(s: str) -> Tuple[str, int, List[float]]:
     """
-    Parse a string in the format <item>:<amount>:<x>:<y>:<z>.
+    Parse a string in the format <item>:<amount> or <item>:<amount>:<x>:<y>:<z>.
+    If coordinates are not provided, use [0.0, 0.0, 0.0] as default.
     
     Args:
-        s: String containing item, amount, and position data
+        s: String containing item, amount, and optionally position data
         
     Returns:
         Tuple of (item_name, amount, [x, y, z])
     """
     parts = s.split(':')
-    if len(parts) != 5:
-        raise argparse.ArgumentTypeError(f"Invalid item spec '{s}', must be <item>:<amount>:<x>:<y>:<z>")
-    
-    name, amount, x, y, z = parts
+    if len(parts) == 2:
+        # Use default coordinates [0.0, 0.0, 0.0]
+        name, amount = parts
+        coords = [0.0, 0.0, 0.0]
+    elif len(parts) == 5:
+        # Full specification with coordinates
+        name, amount, x, y, z = parts
+        try:
+            coords = [float(x), float(y), float(z)]
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid coordinates for item '{name}'")
+    else:
+        raise argparse.ArgumentTypeError(f"Invalid item spec '{s}', must be <item>:<amount> or <item>:<amount>:<x>:<y>:<z>")
     
     if not amount.isdigit() or int(amount) < 1:
         raise argparse.ArgumentTypeError(f"Invalid amount '{amount}' for item '{name}'")
-    
-    try:
-        x, y, z = float(x), float(y), float(z)
-    except ValueError:
-        raise argparse.ArgumentTypeError(f"Invalid coordinates for item '{name}'")
         
-    return (name, int(amount), [x, y, z])
+    return (name, int(amount), coords)
 
 # Standard arguments are now added from the base DayZTool class
 
 def main():
     """
     Main function to run the spawner entries generator as a command-line tool.
+    
+    The tool supports configuration-based defaults for:
+    - Default coordinates: 'object_spawner.default_coordinates' (format: 'x:y:z')
+    - Default output filename: 'object_spawner.default_filename'
+    
+    Items can be specified in two formats:
+    - <item>:<amount> - Uses default coordinates from config
+    - <item>:<amount>:<x>:<y>:<z> - Uses specified coordinates
     """
     parser = argparse.ArgumentParser(
         description="Generate DayZ object spawner JSON entries from command line."
     )
     parser.add_argument("--types_xml", help="Path to types.xml (defaults to path.types_file from config)")
-    parser.add_argument("items", nargs='+', type=parse_item_amount_pos, 
-                      help="Item(s) in format <item>:<amount>:<x>:<y>:<z>")
+    parser.add_argument("items", nargs='+', type=str, 
+                      help="Item(s) in format <item>:<amount> or <item>:<amount>:<x>:<y>:<z>")
     parser.add_argument("--ypr", default="0.0, -0.0, -0.0", help="YPR as comma-separated values (default: '0.0, -0.0, -0.0')")
     parser.add_argument("--scale", type=float, default=1.0, help="Scale (default: 1.0)")
     parser.add_argument("--enableCEPersistence", type=int, default=0, 
@@ -254,7 +306,7 @@ def main():
     parser.add_argument("--customString", default="", 
                       help="customString (default: empty)")
     parser.add_argument("--output", "-o", default=None, 
-                      help="Output file (if not specified, a default filename will be used in the standard output directory)")
+                      help="Output file (if not specified, default filename from config will be used)")
     parser.add_argument("--print", action="store_true",
                       help="Print the generated JSON to stdout")
     
@@ -269,6 +321,13 @@ def main():
     # Create and run the tool
     generator = GenerateSpawnerEntries(config)
     
+    # Parse items using the tool's method to get default coordinates from config
+    try:
+        parsed_items = [generator.parse_item_amount_pos(item) for item in args.items]
+    except ValueError as e:
+        logger.error(f"Error parsing items: {e}")
+        sys.exit(1)
+    
     # Use types_xml from command line or from config
     types_xml_path = args.types_xml if args.types_xml else generator.get_config('paths.types_file')
     
@@ -279,7 +338,7 @@ def main():
     # Use the run method which is required by the base class
     result = generator.run(
         types_xml_path,
-        args.items,
+        parsed_items,
         args.ypr,
         args.scale,
         args.enableCEPersistence,
@@ -299,9 +358,10 @@ def main():
     # Show additional information if --console flag is used
     if args.console:
         logger.info("\nSummary:")
-        logger.info(f"Number of items processed: {len(args.items)}")
-        for item_name, amount, pos in args.items:
+        logger.info(f"Number of items processed: {len(parsed_items)}")
+        for item_name, amount, pos in parsed_items:
             logger.info(f"  - {item_name}: {amount}x at position {pos}")
+        logger.info(f"Default coordinates from config: {generator.default_coordinates}")
 
 
 if __name__ == '__main__':
