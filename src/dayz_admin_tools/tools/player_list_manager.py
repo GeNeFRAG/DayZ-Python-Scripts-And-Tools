@@ -59,6 +59,17 @@ class PlayerListManagerTool(FileBasedTool):
         manager.add_to_list('banlist', ['PlayerName123'])
         players = manager.get_list('banlist')
     """
+    
+    # Precompiled regex patterns for better performance
+    # Pattern to match banned player kick messages
+    # Example: "14:09:13.649 Player Bogumilwolf (1596804848) kicked from server: 7 (You were banned.)"
+    BANNED_PATTERN = re.compile(
+        r'(\d{1,2}:\d{2}:\d{2}\.\d{3})\s+Player\s+(\S+)\s+\((\d+)\)\s+kicked from server:\s*7\s*\(You were banned\.\)',
+        re.IGNORECASE
+    )
+    # Pattern to extract date from RPT file header
+    # Example: "Current time:  2025/07/25 12:05:34"
+    DATE_PATTERN = re.compile(r'Current time:\s+(\d{4}/\d{2}/\d{2})')
 
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
@@ -250,13 +261,6 @@ class PlayerListManagerTool(FileBasedTool):
         
         banned_attempts = []
         
-        # Pattern to match banned player kick messages
-        # Example: "14:09:13.649 Player Bogumilwolf (1596804848) kicked from server: 7 (You were banned.)"
-        banned_pattern = re.compile(
-            r'(\d{1,2}:\d{2}:\d{2}\.\d{3})\s+Player\s+(\S+)\s+\((\d+)\)\s+kicked from server:\s*7\s*\(You were banned\.\)',
-            re.IGNORECASE
-        )
-        
         for rpt_file_path in rpt_files:
             current_date = None
             logger.debug(f"Processing RPT file: {rpt_file_path}")
@@ -266,13 +270,13 @@ class PlayerListManagerTool(FileBasedTool):
                     for line_num, line in enumerate(file, 1):
                         # Extract the date from the RPT file header
                         if "Current time:" in line:
-                            match_date = re.search(r'Current time:\s+(\d{4}/\d{2}/\d{2})', line)
+                            match_date = self.DATE_PATTERN.search(line)
                             if match_date:
                                 current_date = datetime.strptime(match_date.group(1), '%Y/%m/%d').date()
                                 logger.debug(f"RPT log date: {current_date}")
                         
                         # Look for banned player connection attempts
-                        match = banned_pattern.search(line)
+                        match = self.BANNED_PATTERN.search(line)
                         if match and current_date:
                             time_part = match.group(1).split('.')[0]  # Strip milliseconds for consistency
                             try:
