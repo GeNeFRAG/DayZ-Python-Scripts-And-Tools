@@ -228,20 +228,15 @@ class PlayerListManagerTool(FileBasedTool):
         
         Args:
             rpt_file_pattern: File pattern for RPT log files (e.g., '/path/to/*.RPT')
-                            If not provided, uses *.RPT in the configured logs path
+                            If not provided, uses *.RPT in the configured log directory
         
         Returns:
             List of dictionaries containing banned connection attempt information
         """
-        # Get log directory from config
-        log_dir = self.get_config('general.log_path')
-        if not log_dir:
-            logger.warning("No log path configured. Using current directory.")
-            log_dir = '.'
-        
         # Set default pattern if not provided
         if not rpt_file_pattern:
-            rpt_file_pattern = os.path.join(log_dir, "*.RPT")
+            # Use configured log directory from the base class
+            rpt_file_pattern = os.path.join(self.log_dir, "*.RPT")
         
         # Resolve the path to ensure it's absolute
         rpt_pattern_resolved = self.resolve_path(rpt_file_pattern)
@@ -506,7 +501,7 @@ def main():
     )
     banned_parser.add_argument(
         '--rpt-pattern',
-        help='File pattern for RPT log files (e.g., "/path/to/*.RPT"). If not provided, uses *.RPT in the configured logs path'
+        help='File pattern for RPT log files (e.g., "/path/to/*.RPT"). If not provided, uses *.RPT in the configured log directory'
     )
     banned_parser.add_argument(
         '--output-file',
