@@ -1132,24 +1132,7 @@ Examples:
         with open(md_report_path, 'w', encoding='utf-8') as f:
             for line in md_lines:
                 f.write(line + '\n')
-        print(f"\nMarkdown summary exported to: {md_report_path}")
-
-        # Anomalies summary (console only)
-        anomalies = results['anomalies']
-        total_anomalies = sum(len(anomaly_list) for anomaly_list in anomalies.values())
-        if total_anomalies > 0:
-            print(f"\nAnomalies Detected: {total_anomalies}")
-            for anomaly_type, anomaly_list in anomalies.items():
-                if anomaly_list:
-                    print(f"  {anomaly_type.replace('_', ' ').title()}: {len(anomaly_list)}")
-        else:
-            print("\nNo anomalies detected.")
-
-        # Files created
-        if 'exported_files' in results:
-            print(f"\nFiles Created:")
-            for file_path in results['exported_files']:
-                print(f"  {file_path}")
+        print(f"\nMarkdown summary exported to: {md_report_path}") 
 
         print("\nAnalysis completed successfully!")
 
