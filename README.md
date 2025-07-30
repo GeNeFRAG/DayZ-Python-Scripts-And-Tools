@@ -69,12 +69,16 @@ Configuration options are defined in `src/config/profiles/default.json`. You can
 - **Deathmatch Config**: Configure deathmatch settings with area filtering (`dayz-deathmatch-config`)
 - **Compare Missing Groups**: Identify missing groups between mapgroupproto files (`dayz-compare-missing-groups`)
 
+
 ### Admin Tools
 
 - **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API and analyze banned connection attempts from RPT logs (`dayz-player-list-manager`)
+- **ADM Log Analyzer**: Comprehensive analysis of DayZ AdminLog (ADM) files for player and combat statistics, building activity, and more. Generates Markdown summary reports (`dayz-adm-analyzer`)
+
 
 ### Log Tools
 
+- **ADM Log Analyzer**: Analyze DayZ ADM logs for player sessions, combat, building, and more. Outputs a Markdown summary with top players, builders, weapons, killer, and damage (`dayz-adm-analyzer`)
 - **Position Finder**: Find player positions and activities in log files (`dayz-position-finder`)
 - **Duping Detector**: Detect suspicious duplication activities and login patterns (`dayz-duping-detector`)
 - **Search Overtime**: Find overtime issues in logs (`dayz-search-overtime`)
@@ -145,11 +149,15 @@ dayz-player-list-manager banned-attempts check --rpt-pattern "logs/*.RPT"
 dayz-player-list-manager banned-attempts export --rpt-pattern "logs/*.RPT" --output-file banned_attempts.csv
 ```
 
+
 ### Log Analysis
 
 Analyze server logs for useful information:
 
 ```bash
+# Analyze ADM logs and generate a Markdown summary report
+dayz-adm-analyzer --profile my_server --output-prefix my_report
+
 # Download logs from Nitrado server
 dayz-download-logs --start-date 10.06.2025 --end-date 17.06.2025
 
@@ -162,6 +170,22 @@ dayz-duping-detector --proximity-threshold 10 --time-threshold 30
 # Track player kills
 dayz-kill-tracker --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
 ```
+### ADM Log Analyzer Example
+
+Analyze all ADM logs for a server profile and generate a Markdown summary:
+
+```bash
+dayz-adm-analyzer --profile my_server --output-prefix my_report
+```
+
+The Markdown report includes:
+- Top 10 most active players (by playtime)
+- Top 10 most active builders
+- Most weapon used (excluding melee)
+- Top killer
+- Top damage
+
+The report is saved in the configured output directory (see `general.output_path` in your config).
 
 ### JSON Configuration
 

@@ -28,6 +28,7 @@ setup(
             "dayz-duping-detector=dayz_admin_tools.tools.duping_detector:main",
             "dayz-kill-tracker=dayz_admin_tools.tools.kill_tracker:main",
             "dayz-player-list-manager=dayz_admin_tools.tools.player_list_manager:main",
+            "dayz-adm-analyzer=dayz_admin_tools.tools.adm_analyzer:main",
             # XML Types Tools
             "dayz-compare-types=dayz_admin_tools.xml.types.compare_types:main",
             "dayz-change-min-max=dayz_admin_tools.xml.types.change_min_max:main",
