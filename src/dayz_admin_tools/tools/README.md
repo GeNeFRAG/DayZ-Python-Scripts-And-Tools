@@ -78,7 +78,37 @@ Each detected attempt includes:
 - Log path configuration (for banned attempts analysis)
 - SSL verification settings (optional)
 
-### Kill Tracker
+
+### ADM Log Analyzer
+
+**Script**: `adm_analyzer.py`  
+**CLI Command**: `dayz-adm-analyzer`
+
+Comprehensive analysis of DayZ AdminLog (ADM) files. Extracts player session statistics, combat analytics, building/construction activity, and more. Generates a Markdown summary report with top players, builders, weapons, killer, and damage.
+
+**Features**:
+- Parse and aggregate multiple ADM log files
+- Player session and playtime statistics
+- Combat analytics (kills, damage, weapons, top killer)
+- Building/construction activity tracking
+- Markdown summary report with top 10 players/builders, most used weapons, top killer, and top damage
+- CSV export for detailed data
+- Configurable via profiles and CLI
+
+**Usage**:
+```bash
+# Analyze all ADM logs for a profile and generate a Markdown summary
+dayz-adm-analyzer --profile my_server --output-prefix my_report
+```
+
+The Markdown report is saved in your configured output directory (see `general.output_path`).
+
+**Parameters**:
+- `--profile`: Configuration profile to use
+- `--adm-file`: Path to a specific ADM log file (optional)
+- `--output-prefix`: Prefix for output files (default: adm_analysis)
+- `--no-csv`: Skip CSV export (only generate Markdown report)
+- `--console`: Log detailed output summary
 
 **Script**: `kill_tracker.py`  
 **CLI Command**: `dayz-kill-tracker` or `bin/kill_tracker`
