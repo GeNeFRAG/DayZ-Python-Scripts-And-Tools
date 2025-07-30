@@ -42,5 +42,16 @@
     "cfglimitsdefinition_file": "/path/to/your/cfglimitsdefinition.xml",
     "events_file": "/path/to/your/events.xml",
     "event_groups_file": "/path/to/your/cfgeventgroups.xml"
+  },
+  "special_events": {
+    "enabled": true,
+    "special_events": {
+    "enabled": true,
+    "events": [
+      {
+        "name": "treasure_hunt",
+        "regexp": "Player \\\"[^\\\"]+\\\"\\s*\\(id=[A-F0-9]+\\s*pos=<[0-9.-]+,\\s*[0-9.-]+,[0-9.-]+>\\)Player [^<]+<[^>]+> Dug out [^<]+<[^>]+> at position [^\\{]+\\{<[0-9.-]+,[0-9.-]+,[0-9.-]+>}"
+      }
+    ]
   }
 }

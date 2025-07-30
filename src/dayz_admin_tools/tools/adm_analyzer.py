@@ -62,7 +62,6 @@ class PlayerSession:
     disconnect_time: Optional[datetime] = None
     positions: List[Tuple[datetime, float, float, float]] = None
     deaths: int = 0
-    kills: int = 0
     
     def __post_init__(self):
         if self.positions is None:
@@ -121,32 +120,48 @@ class DayZADMAnalyzer(FileBasedTool):
         # Use self.log_dir from base class for log directory
 
         # Pre-compiled regex patterns for performance
-        # Order: most specific first, player_list last
+        # Patterns are grouped and commented by event type for clarity
         self.patterns = {
-            # ...existing code...
-            # Building: only match 'Built <structure> on <parent> with <tool>' or 'Dismantled <structure> from <parent> with <tool>'
-            'building': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*(Built|Dismantled) ([^\s]+) (on|from) ([^\s]+) with ([^\s]+)$'),
-            # ...existing code (other patterns unchanged)...
-            'treasure_hunt': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)Player [^<]+<[^>]+> Dug out ([^<]+)<[^>]+> at position [^\{]+\{<([0-9.-]+),([0-9.-]+),([0-9.-]+)>\}'),
-            'kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*killed by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*with\s*([^\)]+?)\s*from\s*([0-9.]+) meters'),
-            'env_hit_simple': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\]\s*hit by ([^\s]+)$'),
-            'hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*\[HP: ([0-9.]+)\]\s*hit by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*into\s*([^(]+)\((\d+)\)\s*for\s*([0-9.]+) damage\s*\(([^)]+)\)(?: with ([^\)]+) from ([0-9.]+) meters)?'),
-            'explosion_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by explosion \(([^)]+)\)'),
-            'explosion_kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) killed by ([^\s]+)'),
-            'env_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by ([^\s]+) with ([^\s]+)'),
-            'suicide': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)(?:\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>)?\)\s*committed suicide'),
-            'emote': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*performed ([^\s]+)(?: with ([^\s]+))?'),
-            'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
-            'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
-            'unconscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*is unconscious'),
-            'conscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*regained consciousness'),
-            'death': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*died\. Stats> Water: ([0-9.]+) Energy: ([0-9.]+) Bleed sources: (\d+)'),
+            # --- Connection/Disconnection Events ---
             'connection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*is connected'),
             'disconnection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*has been disconnected'),
+
+            # --- Player State/Status Events ---
+            'unconscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*is unconscious'),
+            'conscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*regained consciousness'),
+            'suicide': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)(?:\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>)?\)\s*committed suicide'),
+            'emote': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*performed ([^\s]+)(?: with ([^\s]+))?'),
+
+            # --- Combat Events ---
+            'hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*\[HP: ([0-9.]+)\]\s*hit by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*into\s*([^(]+)\((\d+)\)\s*for\s*([0-9.]+) damage\s*\(([^)]+)\)(?: with ([^\)]+) from ([0-9.]+) meters)?'),
+            'kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*killed by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*with\s*([^"]+?)\s*from\s*([0-9.]+) meters'),
+            'env_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by ([^\s]+) with ([^\s]+)'),
+            'env_hit_simple': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\]\s*hit by ([^\s]+)$'),
+            'explosion_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by explosion \(([^)]+)\)'),
+            'death': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*died\. Stats> Water: ([0-9.]+) Energy: ([0-9.]+) Bleed sources: (\d+)'),
+            'death_other': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) killed by ([^\s]+)'),
+
+            # --- Building/Construction Events ---
+            'building': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*(Built|Dismantled) ([^\s]+) (on|from) ([^\s]+) with ([^\s]+)$'),
+            'packed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) packed (.+?) with ([^\s]+)$'),
+            'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
+            'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
+
+            # --- Fallback/Player List ---
             'player_list': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by))')
         }
-        
 
+        # --- Special/Other Events from config ---
+        special_events_cfg = (self.config or {}).get('special_events', {})
+        if special_events_cfg.get('enabled', False):
+            for event in special_events_cfg.get('events', []):
+                name = event.get('name')
+                regexp = event.get('regexp')
+                if name and regexp:
+                    try:
+                        self.patterns[name] = re.compile(rf'(\d{{2}}:\d{{2}}:\d{{2}})\s*\|\s*{regexp}')
+                    except Exception as e:
+                        logger.error(f"Failed to compile special event regexp for '{name}': {e}")
         
     def parse_log_file(self, log_file: str) -> Dict[str, Any]:
         """
@@ -261,19 +276,68 @@ class DayZADMAnalyzer(FileBasedTool):
         time_str = groups[0]
         details = {'raw_line': line}
         # ...existing code...
-        if event_type == 'treasure_hunt':
-            # Special event for Dug out (treasure hunt)
-            player_name = groups[1]
-            player_id = groups[2]
-            player_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            dug_object = groups[6]
-            dug_pos = (float(groups[7]), float(groups[8]), float(groups[9]))
-            position = player_pos
-            details.update({
-                'event': 'treasure_hunt',
-                'dug_object': dug_object,
-                'dug_position': dug_pos
-            })
+        # --- Config-driven special events ---
+        special_events_cfg = (self.config or {}).get('special_events', {})
+        special_event_names = set(e.get('name') for e in special_events_cfg.get('events', [])) if special_events_cfg.get('enabled', False) else set()
+        if event_type in special_event_names:
+            # Generic handler for config-driven special events
+            player_name = groups[1] if len(groups) > 1 else "Unknown"
+            player_id = groups[2] if len(groups) > 2 else "Unknown"
+            # Try to extract position if present (groups 3,4,5)
+            try:
+                position = (float(groups[3]), float(groups[4]), float(groups[5]))
+            except Exception:
+                position = None
+            details.update({'event': event_type, 'raw_groups': groups})
+            # Optionally, extract more details if the config provides a 'fields' list in the future
+            return PlayerEvent(
+                timestamp=base_date.replace(
+                    hour=int(time_str.split(':')[0]),
+                    minute=int(time_str.split(':')[1]),
+                    second=int(time_str.split(':')[2])
+                ),
+                player_name=player_name,
+                player_id=player_id,
+                event_type=event_type,
+                position=position,
+                details=details
+            )
+        # (No hardcoded treasure_hunt block; handled by config-driven special event logic above)
+        elif event_type == 'packed':
+            # Special event for packed (building event)
+            logger.debug(f"PACKED EVENT GROUPS: {groups}")
+            if len(groups) == 8:
+                player_name = groups[1]
+                player_id = groups[2]
+                try:
+                    position = (float(groups[3]), float(groups[4]), float(groups[5]))
+                except Exception as e:
+                    logger.error(f"Error parsing position for packed event: {e}")
+                    position = None
+                structure = groups[6]
+                tool = groups[7]
+                details.update({
+                    'action': 'packed',
+                    'structure': structure,
+                    'parent': '',
+                    'tool': tool
+                })
+                # Return PlayerEvent immediately to avoid further processing and tuple index errors
+                return PlayerEvent(
+                    timestamp=base_date.replace(
+                        hour=int(time_str.split(':')[0]),
+                        minute=int(time_str.split(':')[1]),
+                        second=int(time_str.split(':')[2])
+                    ),
+                    player_name=player_name,
+                    player_id=player_id,
+                    event_type='building',
+                    position=position,
+                    details=details
+                )
+            else:
+                logger.error(f"Malformed packed event, skipping: {groups}")
+                return None
         # ...existing code...
         
         # Parse timestamp
@@ -297,6 +361,15 @@ class DayZADMAnalyzer(FileBasedTool):
             player_name = groups[1]
             player_id = groups[2]
             position = (float(groups[3]), float(groups[4]), float(groups[5]))
+
+        elif event_type in ['placed', 'folded']:
+            player_name = groups[1]
+            player_id = groups[2]
+            try:
+                position = (float(groups[3]), float(groups[4]), float(groups[5]))
+            except Exception as e:
+                logger.error(f"Error parsing position for {event_type} event: {e}")
+                position = None
             
         elif event_type == 'death':
             player_name = groups[1]
@@ -430,20 +503,39 @@ class DayZADMAnalyzer(FileBasedTool):
                 'distance': None
             })
 
-        elif event_type == 'explosion_kill':
+        elif event_type == 'death_other':
             player_name = groups[1]
             player_id = groups[2]
             victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
             killer = groups[6]
             position = victim_pos
-            details.update({
-                'attacker_name': killer,
-                'attacker_id': None,
-                'attacker_pos': None,
-                'weapon': None,
-                'distance': None,
-                'kill': True
-            })
+            # Map animal classnames to friendly names and special event types
+            animal_map = {
+                'Animal_UrsusArctos': ('Bear', 'death_by_bear'),
+                'Animal_CanisLupus_Grey': ('Wolf', 'death_by_wolf'),
+                'Animal_CanisLupus_White': ('Wolf', 'death_by_wolf'),
+            }
+            if killer in animal_map:
+                friendly, special_event = animal_map[killer]
+                details.update({
+                    'attacker_name': friendly,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True,
+                    'special_event': special_event
+                })
+                event_type = special_event
+            else:
+                details.update({
+                    'attacker_name': killer,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True
+                })
             
         elif event_type == 'kill':
             player_name = groups[1]  # Victim
@@ -601,18 +693,23 @@ class DayZADMAnalyzer(FileBasedTool):
             
             # Count player events
             player_events = [e for e in self.events if e.player_id == player_id]
+            # Count all deaths for reporting
             deaths = len([e for e in player_events if e.event_type == 'death'])
+            # Count only deaths caused by another player for K/D
+            deaths_by_player = len([e for e in self.combat_events if e.victim_id == player_id and e.kill])
             suicides = len([e for e in player_events if e.event_type == 'suicide'])
             emotes = len([e for e in player_events if e.event_type == 'emote'])
-            building_actions = len([e for e in player_events if e.event_type == 'building'])
+            building_actions = len([e for e in player_events if e.event_type in ('building', 'placed', 'folded', 'packed')])
+            deaths_by_bear = len([e for e in player_events if e.event_type == 'death_by_bear'])
+            deaths_by_wolf = len([e for e in player_events if e.event_type == 'death_by_wolf'])
             
-            # Combat statistics
-            kills = len([e for e in self.combat_events if e.attacker_id == player_id and e.kill])
-            hits_dealt = len([e for e in self.combat_events if e.attacker_id == player_id])
-            hits_taken = len([e for e in self.combat_events if e.victim_id == player_id])
-            damage_dealt = sum(e.damage for e in self.combat_events if e.attacker_id == player_id)
-            damage_taken = sum(e.damage for e in self.combat_events if e.victim_id == player_id)
-            
+            # PvP-only combat statistics (add (PvP) suffix to keys)
+            kills_pvp = len([e for e in self.combat_events if e.attacker_id == player_id and e.kill])
+            hits_dealt_pvp = len([e for e in self.combat_events if e.attacker_id == player_id and e.victim_id and e.attacker_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id])
+            hits_taken_pvp = len([e for e in self.combat_events if e.victim_id == player_id and e.attacker_id and e.victim_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id])
+            damage_dealt_pvp = sum(e.damage for e in self.combat_events if e.attacker_id == player_id and e.victim_id and e.attacker_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id)
+            damage_taken_pvp = sum(e.damage for e in self.combat_events if e.victim_id == player_id and e.attacker_id and e.victim_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id)
+
             stats['players'][player_id] = {
                 'name': player_name,
                 'sessions': len(sessions),
@@ -621,16 +718,18 @@ class DayZADMAnalyzer(FileBasedTool):
                 'total_distance_traveled': total_distance,
                 'deaths': deaths,
                 'suicides': suicides,
-                'kills': kills,
-                'kd_ratio': kills / max(deaths, 1),
-                'hits_dealt': hits_dealt,
-                'hits_taken': hits_taken,
-                'damage_dealt': damage_dealt,
-                'damage_taken': damage_taken,
-                'accuracy': (kills / max(hits_dealt, 1)) * 100 if hits_dealt > 0 else 0,
+                'kills (PvP)': kills_pvp,
+                'kd_ratio (PvP)': kills_pvp / max(deaths_by_player, 1),
+                'hits_dealt (PvP)': hits_dealt_pvp,
+                'hits_taken (PvP)': hits_taken_pvp,
+                'damage_dealt (PvP)': damage_dealt_pvp,
+                'damage_taken (PvP)': damage_taken_pvp,
+                'accuracy (PvP)': (kills_pvp / max(hits_dealt_pvp, 1)) * 100 if hits_dealt_pvp > 0 else 0,
                 'emotes': emotes,
                 'building_actions': building_actions,
-                'avg_damage_per_hit': damage_dealt / max(hits_dealt, 1) if hits_dealt > 0 else 0
+                'avg_damage_per_hit (PvP)': damage_dealt_pvp / max(hits_dealt_pvp, 1) if hits_dealt_pvp > 0 else 0,
+                'deaths_by_bear': deaths_by_bear,
+                'deaths_by_wolf': deaths_by_wolf
             }
         
         return stats
@@ -788,28 +887,49 @@ class DayZADMAnalyzer(FileBasedTool):
         
         # Player statistics
         player_stats = self.generate_player_statistics()
+        # --- Config-driven special events ---
+        special_events_cfg = (self.config or {}).get('special_events', {})
+        special_event_names = [e.get('name') for e in special_events_cfg.get('events', [])] if special_events_cfg.get('enabled', False) else []
+        # Count special events per player
+        special_event_counts = {name: {} for name in special_event_names}
+        for e in self.events:
+            if e.event_type in special_event_names:
+                pid = getattr(e, 'player_id', None)
+                if pid:
+                    special_event_counts[e.event_type][pid] = special_event_counts[e.event_type].get(pid, 0) + 1
+
         if player_stats['players']:
             player_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_player_stats_{timestamp}.csv")
             with open(player_csv, 'w', newline='', encoding='utf-8') as f:
                 writer = csv.writer(f)
-                writer.writerow([
+                # Standard columns
+                columns = [
                     'Player Name', 'Sessions', 'Total Playtime (Hours)',
                     'Avg Session Time (Minutes)', 'Distance Traveled', 'Deaths', 'Suicides',
-                    'Kills', 'K/D Ratio', 'Hits Dealt', 'Hits Taken', 'Damage Dealt',
-                    'Damage Taken', 'Accuracy %', 'Emotes', 'Building Actions', 'Avg Damage Per Hit'
-                ])
+                    'Kills (PvP)', 'K/D Ratio (PvP)', 'Hits Dealt (PvP)', 'Hits Taken (PvP)', 'Damage Dealt (PvP)',
+                    'Damage Taken (PvP)', 'Avg Damage Per Hit (PvP)', 'Accuracy % (PvP)', 'Emotes', 'Building Actions',
+                    'Deaths by Bear', 'Deaths by Wolf'
+                ]
+                # Add special event columns
+                columns += [f"{name.replace('_', ' ').title()} Events" for name in special_event_names]
+                writer.writerow(columns)
                 for player_id, stats in player_stats['players'].items():
-                    writer.writerow([
+                    row = [
                         stats['name'], stats['sessions'],
                         round(stats['total_playtime_hours'], 2),
                         round(stats['avg_session_time_minutes'], 2),
                         round(stats['total_distance_traveled'], 2),
-                        stats['deaths'], stats['suicides'], stats['kills'],
-                        round(stats['kd_ratio'], 2), stats['hits_dealt'], stats['hits_taken'],
-                        round(stats['damage_dealt'], 2), round(stats['damage_taken'], 2),
-                        round(stats['accuracy'], 2), stats['emotes'], stats['building_actions'],
-                        round(stats['avg_damage_per_hit'], 2)
-                    ])
+                        stats['deaths'], stats['suicides'], stats['kills (PvP)'],
+                        round(stats['kd_ratio (PvP)'], 2), stats['hits_dealt (PvP)'], stats['hits_taken (PvP)'],
+                        round(stats['damage_dealt (PvP)'], 2), round(stats['damage_taken (PvP)'], 2),
+                        round(stats['avg_damage_per_hit (PvP)'], 2), round(stats['accuracy (PvP)'], 2), stats['emotes'], stats['building_actions'],
+                        stats.get('deaths_by_bear', 0),
+                        stats.get('deaths_by_wolf', 0)
+                    ]
+                    # Add special event counts
+                    for name in special_event_names:
+                        row.append(special_event_counts[name].get(player_id, 0))
+                    writer.writerow(row)
             created_files.append(player_csv)
             logger.info(f"Player statistics exported to: {player_csv}")
         
@@ -841,8 +961,8 @@ class DayZADMAnalyzer(FileBasedTool):
             created_files.append(combat_csv)
             logger.info(f"Combat events exported to: {combat_csv}")
 
-        # Building activities report (includes building, placed, folded)
-        building_events = [e for e in self.events if e.event_type in ('building', 'placed', 'folded')]
+        # Building activities report (includes building, packed, placed, folded)
+        building_events = [e for e in self.events if e.event_type in ('building', 'packed', 'placed', 'folded')]
         if building_events:
             building_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_building_events_{timestamp}.csv")
             with open(building_csv, 'w', newline='', encoding='utf-8') as f:
@@ -859,7 +979,6 @@ class DayZADMAnalyzer(FileBasedTool):
                     if event.event_type == 'placed':
                         action = 'placed'
                         if not structure:
-                            # Try to extract after ' placed '
                             raw = details.get('raw_line', '')
                             if ' placed ' in raw:
                                 structure = raw.split(' placed ')[-1].strip()
@@ -873,7 +992,6 @@ class DayZADMAnalyzer(FileBasedTool):
                         # If structure or tool missing, try to extract from raw_line
                         if not structure or (tool is None):
                             raw = details.get('raw_line', '')
-                            # Example: ... Built FenceKit with Hammer
                             import re as _re
                             m = _re.search(r'\)\s*(Built|Dismantled|placed) ([^\s]+)(?: with ([^\s]+))?', raw)
                             if m:
@@ -885,6 +1003,7 @@ class DayZADMAnalyzer(FileBasedTool):
                                     tool = m.group(3) if m.group(3) else ''
                         if tool is None:
                             tool = ''
+                    # Always use event.position for all building-related events
                     x, y, z = ('', '', '')
                     if event.position:
                         x, y, z = event.position
@@ -1083,6 +1202,16 @@ Examples:
         md_lines.append(f"- Combat Events: {summary['total_combat_events']}")
 
 
+
+        # --- Config-driven special events for Markdown summary ---
+        special_events_cfg = (analyzer.config or {}).get('special_events', {})
+        special_event_names = [e.get('name') for e in special_events_cfg.get('events', [])] if special_events_cfg.get('enabled', False) else []
+        # Count special events globally
+        special_event_counts_global = {name: 0 for name in special_event_names}
+        for e in analyzer.events:
+            if e.event_type in special_event_names:
+                special_event_counts_global[e.event_type] += 1
+
         # Top 10 Most Active Players (by playtime)
         if player_stats.get('players'):
             sorted_players = sorted(
@@ -1092,7 +1221,20 @@ Examples:
             )
             md_lines.append(f"\n**Top 10 Most Active Players (by playtime):**")
             for idx, (player_id, stats) in enumerate(sorted_players[:10], 1):
-                md_lines.append(f"* {stats['name']}: {stats['total_playtime_hours']:.1f}h, {stats['kills']} kills, {stats['deaths']} deaths")
+                md_lines.append(f"* {stats['name']}: {stats['total_playtime_hours']:.1f}h, {stats.get('kills (PvP)', 0)} kills (PvP), {stats.get('deaths', 0)} deaths, {stats.get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
+
+        # Special event counts
+        if special_event_names:
+            md_lines.append(f"\n**Special Events:**")
+            for name in special_event_names:
+                md_lines.append(f"* {name.replace('_', ' ').title()}: {special_event_counts_global[name]} occurrences")
+
+        # Deaths by Bear and Wolf (special events)
+        total_bear = sum(stats.get('deaths_by_bear', 0) for stats in player_stats['players'].values())
+        total_wolf = sum(stats.get('deaths_by_wolf', 0) for stats in player_stats['players'].values())
+        md_lines.append(f"\n**Special Animal Deaths:**")
+        md_lines.append(f"* Deaths by Bear: {total_bear}")
+        md_lines.append(f"* Deaths by Wolf: {total_wolf}")
 
         # Top 10 Most Active Builders
         sorted_builders = sorted(
@@ -1116,17 +1258,44 @@ Examples:
 
         # Top Killer
         if player_stats.get('players'):
-            top_killer = max(player_stats['players'].items(), key=lambda x: x[1]['kills'], default=None)
-            if top_killer and top_killer[1]['kills'] > 0:
-                md_lines.append(f"\n**Top Killer:**")
-                md_lines.append(f"* {top_killer[1]['name']}: {top_killer[1]['kills']} kills")
+            top_killer = max(player_stats['players'].items(), key=lambda x: x[1].get('kills (PvP)', 0), default=None)
+            if top_killer and top_killer[1].get('kills (PvP)', 0) > 0:
+                md_lines.append(f"\n**Top Killer (PvP):**")
+                md_lines.append(f"* {top_killer[1]['name']}: {top_killer[1].get('kills (PvP)', 0)} kills (PvP), {top_killer[1].get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
 
         # Top Damage
+
         if player_stats.get('players'):
-            top_damage = max(player_stats['players'].items(), key=lambda x: x[1]['damage_dealt'], default=None)
-            if top_damage and top_damage[1]['damage_dealt'] > 0:
-                md_lines.append(f"\n**Top Damage:**")
-                md_lines.append(f"* {top_damage[1]['name']}: {top_damage[1]['damage_dealt']:.1f} total damage")
+            top_damage = max(player_stats['players'].items(), key=lambda x: x[1].get('damage_dealt (PvP)', 0), default=None)
+            if top_damage and top_damage[1].get('damage_dealt (PvP)', 0) > 0:
+                md_lines.append(f"\n**Top Damage (PvP):**")
+                md_lines.append(f"* {top_damage[1]['name']}: {top_damage[1].get('damage_dealt (PvP)', 0):.1f} total damage (PvP)")
+
+        # Top K/D Ratio (PvP)
+        if player_stats.get('players'):
+            # Consider all players, even those with 0 deaths (K/D = kills / max(deaths, 1))
+            kd_players = [(pid, stats) for pid, stats in player_stats['players'].items() if stats.get('kd_ratio (PvP)', 0) > 0]
+            if kd_players:
+                top_kd = max(kd_players, key=lambda x: x[1].get('kd_ratio (PvP)', 0))
+                md_lines.append(f"\n**Top K/D Ratio (PvP):**")
+                md_lines.append(f"* {top_kd[1]['name']}: {top_kd[1].get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
+
+        # Suspicious/Anomalous Events
+        anomalies = results.get('anomalies', {})
+        if anomalies:
+            md_lines.append(f"\n**Suspicious/Anomalous Events:**")
+            # Rapid Reconnections
+            rapid_reconnections = anomalies.get('rapid_reconnections', [])
+            if rapid_reconnections:
+                md_lines.append(f"* Rapid Reconnections:")
+                for entry in rapid_reconnections:
+                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {entry['rapid_reconnects']} rapid reconnects in {entry['total_sessions']} sessions")
+            # High Damage Dealers
+            high_damage_dealers = anomalies.get('high_damage_dealers', [])
+            if high_damage_dealers:
+                md_lines.append(f"* High Damage Dealers:")
+                for entry in high_damage_dealers:
+                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {entry['average_damage']:.2f} avg damage over {entry['total_hits']} hits")
 
         # Write Markdown report
         with open(md_report_path, 'w', encoding='utf-8') as f:
