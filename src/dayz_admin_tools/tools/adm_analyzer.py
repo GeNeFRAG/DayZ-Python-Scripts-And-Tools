@@ -147,8 +147,8 @@ class DayZADMAnalyzer(FileBasedTool):
             'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
             'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
 
-            # --- Fallback/Player List ---
-            'player_list': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by))')
+            # --- Fallback/Player Position ---
+            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by))')
         }
 
         # --- Special/Other Events from config ---
@@ -356,8 +356,8 @@ class DayZADMAnalyzer(FileBasedTool):
             player_name = groups[1]
             player_id = groups[2]
             position = None
-            
-        elif event_type == 'player_list':
+        
+        elif event_type == 'player_position':
             player_name = groups[1]
             player_id = groups[2]
             position = (float(groups[3]), float(groups[4]), float(groups[5]))
