@@ -2,6 +2,7 @@
 
 A Python package for DayZ server administration, providing tools for server management, log analysis, XML file manipulation, and more. This package is particularly focused on simplifying common tasks for DayZ server administrators.
 
+
 ## Features
 
 - **XML Management**: Comprehensive tools for working with DayZ's types.xml, mapgroupproto.xml, and other economy files
@@ -11,6 +12,10 @@ A Python package for DayZ server administration, providing tools for server mana
 - **Player Tracking**: Advanced tools for position tracking, duping detection, and kill analysis
 - **Nitrado Integration**: Direct API integration for Nitrado-hosted DayZ servers with file and player management
 - **Configuration Management**: Robust configuration system supporting multiple server profiles and credentials
+- **Configurable Special/Other Event Extraction**: The ADM Log Analyzer now supports fully configurable special/custom event extraction and reporting. Define any number of custom events in your config JSON (see `special_events` section) and they will be extracted, counted per player, and included in all reports.
+- **PvP-Only Statistics**: All K/D, hits, and damage statistics in the ADM analyzer now only count player-vs-player (PvP) events, clearly labeled in all reports.
+- **Comprehensive Building Actions**: Building/construction activity tracking now includes all building, placed, folded, and packed events.
+- **Robust Error Handling**: The ADM analyzer is robust to new or malformed log lines, and will log errors for any lines it cannot parse.
 
 ## Installation
 
@@ -36,6 +41,7 @@ dayz_admin_tools/
 └── config/          # Configuration system
 ```
 
+
 ## Configuration System
 
 This package includes a comprehensive configuration system that allows you to:
@@ -44,10 +50,35 @@ This package includes a comprehensive configuration system that allows you to:
 - Store API tokens, server IDs, and other settings
 - Access configuration values from within your scripts
 - Configure common output directories for all tools
+- **Define custom/special events for log extraction and reporting** (see `special_events` section below)
 
 All tools use the `general.output_path` setting to store their output files, making it easy to manage generated files across different tools.
 
 Configuration options are defined in `src/config/profiles/default.json`. You can create custom profiles by adding new JSON files to the profiles directory.
+
+### Special/Other Events Configuration
+
+To extract and report on custom/special events in the ADM analyzer, add a `special_events` section to your config JSON. Example:
+
+```json
+"special_events": {
+  "enabled": true,
+  "events": [
+    {
+      "name": "treasure_hunt",
+      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*found treasure at pos=<([0-9.-]+), ([0-9.-]+), ([0-9.-]+)>",
+      "description": "Treasure Hunt Event"
+    },
+    {
+      "name": "custom_event",
+      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*did something special",
+      "description": "Custom server event"
+    }
+  ]
+}
+```
+
+All configured special events will be extracted, counted per player, and included as columns in the CSV and Markdown summary reports.
 
 ## Available Tools
 

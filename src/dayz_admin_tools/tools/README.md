@@ -79,29 +79,33 @@ Each detected attempt includes:
 - SSL verification settings (optional)
 
 
+
 ### ADM Log Analyzer
 
 **Script**: `adm_analyzer.py`  
 **CLI Command**: `dayz-adm-analyzer`
 
-Comprehensive analysis of DayZ AdminLog (ADM) files. Extracts player session statistics, combat analytics, building/construction activity, and more. Generates a Markdown summary report with top players, builders, weapons, killer, and damage.
+Comprehensive analysis of DayZ AdminLog (ADM) files. Extracts player session statistics, PvP combat analytics, building/construction activity, and more. Generates Markdown and CSV summary reports with top players, builders, weapons, killer, and damage. Now supports fully configurable special/custom event extraction and reporting via the configuration file.
 
 **Features**:
 - Parse and aggregate multiple ADM log files
 - Player session and playtime statistics
-- Combat analytics (kills, damage, weapons, top killer)
-- Building/construction activity tracking
-- Markdown summary report with top 10 players/builders, most used weapons, top killer, and top damage
+- PvP-only combat analytics (kills, K/D, hits, damage, accuracy, top killer)
+- Building/construction activity tracking (including all building, placed, folded, packed events)
+- Markdown and CSV summary reports with top 10 players/builders, most used weapons, top killer, and top damage
+- Configurable, server-specific special/custom event extraction and reporting (e.g., treasure hunts, animal deaths, server-specific events)
+- All special/other events are defined in the config JSON (see `special_events` section)
+- Robust error handling and defensive parsing for all event types
 - CSV export for detailed data
 - Configurable via profiles and CLI
 
 **Usage**:
 ```bash
-# Analyze all ADM logs for a profile and generate a Markdown summary
+# Analyze all ADM logs for a profile and generate Markdown and CSV summary reports
 dayz-adm-analyzer --profile my_server --output-prefix my_report
 ```
 
-The Markdown report is saved in your configured output directory (see `general.output_path`).
+The Markdown and CSV reports are saved in your configured output directory (see `general.output_path`).
 
 **Parameters**:
 - `--profile`: Configuration profile to use
@@ -109,6 +113,48 @@ The Markdown report is saved in your configured output directory (see `general.o
 - `--output-prefix`: Prefix for output files (default: adm_analysis)
 - `--no-csv`: Skip CSV export (only generate Markdown report)
 - `--console`: Log detailed output summary
+
+**Configurable Special/Other Events**
+
+You can define any number of custom/special events to extract and report on in the ADM analyzer by adding them to the `special_events` section of your config JSON (e.g., `src/config/profiles/default.json`). Example:
+
+```json
+"special_events": {
+  "enabled": true,
+  "events": [
+    {
+      "name": "treasure_hunt",
+      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*found treasure at pos=<([0-9.-]+), ([0-9.-]+), ([0-9.-]+)>",
+      "description": "Treasure Hunt Event"
+    },
+    {
+      "name": "custom_event",
+      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*did something special",
+      "description": "Custom server event"
+    }
+  ]
+}
+```
+
+All configured special events will be extracted, counted per player, and included as columns in the CSV and Markdown summary reports.
+
+**PvP-Only Statistics**
+
+All K/D, hits, and damage statistics now only count player-vs-player (PvP) events. These columns are clearly labeled with a (PvP) suffix in the CSV and Markdown reports.
+
+**Building Actions**
+
+The "Building Actions" stat now includes all building, placed, folded, and packed events for each player.
+
+**Robust Error Handling**
+
+The analyzer is robust to new or malformed log lines, and will log errors for any lines it cannot parse.
+
+**Example Output**
+
+CSV columns include: Player Name, Sessions, Total Playtime (Hours), Kills (PvP), K/D Ratio (PvP), Hits Dealt (PvP), Damage Dealt (PvP), Building Actions, Deaths by Bear, Deaths by Wolf, and all configured special events.
+
+**See also:** The top-level README for more details on configuration and usage.
 
 **Script**: `kill_tracker.py`  
 **CLI Command**: `dayz-kill-tracker` or `bin/kill_tracker`
