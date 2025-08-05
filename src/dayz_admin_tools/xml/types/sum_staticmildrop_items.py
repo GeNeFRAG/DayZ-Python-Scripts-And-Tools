@@ -51,8 +51,7 @@ class SumStaticMilDropItemsTool(EventCounter):
             events_path=events_path,
             groups_path=groups_path,
             output_path=output_path or "md_loot.csv",
-            event_pattern=None,
-            specific_event="StaticMildrop",
+            event_pattern="StaticMildrop",
             group_name="Mildrop"
         )
         

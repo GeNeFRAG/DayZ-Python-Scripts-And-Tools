@@ -35,6 +35,13 @@
     "default_filename": "16355842-shop.json",
     "default_coordinates": "10106.6:8.5:1696.5"
   },
+  "event_counter": {
+    "output_files": {
+      "StaticMildrop": "md_loot.csv",
+      "StaticBuilder_": "sb_loot.csv"
+    },
+    "default_output_file": "event_loot.csv"
+  },
   "paths": {
     "types_file": "/path/to/your/types.xml",
     "types_file_ref": "/path/to/your/types_ref.xml",

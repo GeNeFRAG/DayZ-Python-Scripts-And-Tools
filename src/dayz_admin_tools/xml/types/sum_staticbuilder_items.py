@@ -49,7 +49,6 @@ class SumStaticBuilderItemsTool(EventCounter):
             groups_path=groups_path,
             output_path=output_path,
             event_pattern="StaticBuilder_",
-            specific_event=None,
             group_name="SkullsMaterials"
         )
 
