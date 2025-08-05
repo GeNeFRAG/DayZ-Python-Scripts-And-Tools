@@ -33,6 +33,9 @@ class PositionFinder(FileBasedTool):
         # Get default patterns from config but only use *.ADM pattern
         config_patterns = self.get_config('log_filtering.default_patterns', ["*.RPT", "*.ADM"])
         self.default_pattern = "*.ADM"  # Always use *.ADM pattern regardless of config
+        self._player_regex = None  # Cache for compiled regex pattern
+        # Precompiled regex to detect regex metacharacters
+        self._regex_detector = re.compile(r'[.*+?^${}()|[\]\\]')
     
     def _extract_info(self, line: str, file_date: str) -> Tuple[Optional[str], Optional[str], Optional[tuple], Optional[str]]:
         """
@@ -234,27 +237,58 @@ class PositionFinder(FileBasedTool):
         
         return sorted(results, key=lambda x: x[7])  # Sort by distance
 
+    def _is_regex_pattern(self, pattern: str) -> bool:
+        """
+        Detect if a string contains regex metacharacters
+        
+        Args:
+            pattern: String to check for regex patterns
+            
+        Returns:
+            True if pattern contains regex metacharacters, False otherwise
+        """
+        return bool(self._regex_detector.search(pattern))
+
     def find_positions_by_player(self, file_pattern: Optional[str] = None, player_name_filter: str = "") -> List[tuple]:
         """
         Find positions and actions for a specific player in multiple files
         
         Args:
             file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
-            player_name_filter: Player name to filter by
+            player_name_filter: Player name to filter by (automatically detects regex patterns)
         
         Returns:
             List of tuples containing file details and player actions
         """
+        # Auto-detect if the filter contains regex patterns
+        use_regex = self._is_regex_pattern(player_name_filter)
+        
+        # Precompile regex pattern if needed
+        if use_regex:
+            try:
+                self._player_regex = re.compile(player_name_filter, re.IGNORECASE)
+                logger.info(f"Auto-detected regex pattern for player search: {player_name_filter}")
+            except re.error as e:
+                logger.error(f"Invalid regex pattern '{player_name_filter}': {e}")
+                return []
+        else:
+            self._player_regex = None
+            logger.info(f"Using substring search for player: {player_name_filter}")
+
         def process_player_line(filename, line_num, file_date, time_str, player_name, coords, action):
             """Process line for player search"""
-            if player_name and player_name_filter.lower() in player_name.lower():
-                return (filename, line_num, file_date, time_str, player_name, coords, action)
+            if player_name:
+                if use_regex and self._player_regex:
+                    if self._player_regex.search(player_name):
+                        return (filename, line_num, file_date, time_str, player_name, coords, action)
+                elif not use_regex and player_name_filter.lower() in player_name.lower():
+                    return (filename, line_num, file_date, time_str, player_name, coords, action)
             return None
         
         return self._process_files(
             file_pattern,
             process_player_line,
-            f"player: {player_name_filter}"
+            f"player: {player_name_filter} {'(auto-detected regex)' if use_regex else '(substring)'}"
         )
 
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
@@ -456,8 +490,17 @@ Examples:
   # Find positions near coordinates with specific file pattern
   dayz-position-finder --file_pattern "*.ADM" --target-x 7500 --target-y 8500 --radius 100
   
-  # Find positions for a specific player
+  # Find positions for a specific player (substring search)
   dayz-position-finder --player "SurvivorName"
+  
+  # Find positions using regex pattern (auto-detected)
+  dayz-position-finder --player "Survivor.*"
+  
+  # Find multiple players with regex (auto-detected)
+  dayz-position-finder --player "(john|jane|bob)"
+  
+  # Advanced regex patterns (auto-detected)
+  dayz-position-finder --player "^Player[0-9]+$"
   
   # Filter by date range and use specific output file
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
@@ -471,7 +514,7 @@ Examples:
     parser.add_argument('--target-y', type=float, help='Target Y coordinate for location-based search')
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
     parser.add_argument('--output', default='positions.csv', help='Output CSV file name (default: positions.csv)')
-    parser.add_argument('--player', help='Player name to filter by')
+    parser.add_argument('--player', help='Player name to filter by (regex patterns are auto-detected)')
     parser.add_argument('--start-date', help='Start date in D.M.YYYY format (e.g., 01.06.2023)')
     parser.add_argument('--end-date', help='End date in D.M.YYYY format (e.g., 30.06.2023)')
     

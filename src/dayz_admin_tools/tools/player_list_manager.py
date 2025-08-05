@@ -321,6 +321,9 @@ class PlayerListManagerTool(FileBasedTool):
         """
         banned_attempts = self.check_banned_connection_attempts(rpt_file_pattern)
         
+        # Sort by timestamp for chronological order
+        banned_attempts.sort(key=lambda x: x['timestamp'])
+        
         if not output_file:
             output_file = self.generate_timestamped_filename("banned_connection_attempts", "csv")
         
