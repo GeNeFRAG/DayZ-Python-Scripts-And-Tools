@@ -41,6 +41,7 @@
     "mapgroupproto_file": "/path/to/your/mapgroupproto.xml",
     "cfglimitsdefinition_file": "/path/to/your/cfglimitsdefinition.xml",
     "events_file": "/path/to/your/events.xml",
+    "eventspawns_file": "/path/to/your/cfgeventspawns.xml",
     "event_groups_file": "/path/to/your/cfgeventgroups.xml"
   },
   "special_events": {

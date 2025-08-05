@@ -94,9 +94,20 @@ def main():
         logger.info(f"\nAnalysis complete:")
         logger.info(f"- Events file: {result['events_file']}")
         logger.info(f"- Groups file: {result['groups_file']}")
+        logger.info(f"- Event spawns file: {result['eventspawns_file']}")
+        logger.info(f"- Event consistency validation: {'PASSED' if result['validation']['valid'] else 'FAILED'}")
         logger.info(f"- Active StaticBuilder events: {result['active_events']}")
         logger.info(f"- Total items: {total_items}")
         logger.info(f"- Results written to: {result['output_file']}")
+        
+        # Display validation details if requested
+        validation = result['validation']
+        if not validation['valid']:
+            logger.warning("\nValidation Issues Found:")
+            if validation['events_without_spawns']:
+                logger.warning(f"Events without spawn positions: {', '.join(validation['events_without_spawns'])}")
+            if validation['spawns_without_events']:
+                logger.warning(f"Spawn positions without event definitions: {', '.join(validation['spawns_without_events'])}")
         
         # Print total count for shell script consumption
         print(f"TOTAL_COUNT={total_items}")

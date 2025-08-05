@@ -5,7 +5,7 @@ A reusable tool for counting items in static events.
 """
 
 import logging
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, Set
 from collections import Counter
 import xml.etree.ElementTree as ET
 
@@ -31,6 +31,87 @@ class EventCounter(EventAnalyzerTool):
         
         # Initialize common directories
         self.initialize_directories()
+
+    def validate_event_consistency(self, events_path: str, eventspawns_path: str) -> Dict[str, Any]:
+        """
+        Validate that event definitions are consistent between events.xml and cfgeventspawns.xml.
+        
+        This checks that:
+        1. Every event defined in events.xml has corresponding spawn positions in cfgeventspawns.xml
+        2. Every event with spawn positions in cfgeventspawns.xml has a definition in events.xml
+        
+        Args:
+            events_path: Path to the events.xml file
+            eventspawns_path: Path to the cfgeventspawns.xml file
+            
+        Returns:
+            Dictionary with validation results
+            
+        Raises:
+            ValueError: If inconsistencies are found between the files
+        """
+        logger.info("Validating event consistency between events.xml and cfgeventspawns.xml")
+        
+        # Read events.xml to get defined events
+        logger.info(f"Reading events from: {events_path}")
+        events_root = self.read_xml(events_path)
+        defined_events = set()
+        
+        for event in events_root.findall('event'):
+            event_name = event.get('name')
+            if event_name:
+                defined_events.add(event_name)
+        
+        # Read cfgeventspawns.xml to get events with spawn positions
+        logger.info(f"Reading event spawns from: {eventspawns_path}")
+        eventspawns_root = self.read_xml(eventspawns_path)
+        spawned_events = set()
+        
+        for event in eventspawns_root.findall('event'):
+            event_name = event.get('name')
+            if event_name:
+                spawned_events.add(event_name)
+        
+        # Find inconsistencies
+        events_without_spawns = defined_events - spawned_events
+        spawns_without_events = spawned_events - defined_events
+        
+        # Log findings
+        logger.info(f"Found {len(defined_events)} events defined in events.xml")
+        logger.info(f"Found {len(spawned_events)} events with spawn positions in cfgeventspawns.xml")
+        
+        validation_result = {
+            "valid": len(events_without_spawns) == 0 and len(spawns_without_events) == 0,
+            "defined_events": sorted(defined_events),
+            "spawned_events": sorted(spawned_events),
+            "events_without_spawns": sorted(events_without_spawns),
+            "spawns_without_events": sorted(spawns_without_events)
+        }
+        
+        if not validation_result["valid"]:
+            # Build detailed error message
+            error_messages = []
+            
+            if events_without_spawns:
+                error_messages.append(
+                    f"Events defined in events.xml but missing spawn positions in cfgeventspawns.xml: "
+                    f"{', '.join(sorted(events_without_spawns))}"
+                )
+            
+            if spawns_without_events:
+                error_messages.append(
+                    f"Events with spawn positions in cfgeventspawns.xml but missing definitions in events.xml: "
+                    f"{', '.join(sorted(spawns_without_events))}"
+                )
+            
+            error_message = "; ".join(error_messages)
+            logger.error(f"Event consistency validation failed: {error_message}")
+            
+            # Raise error to stop execution
+            raise ValueError(f"Event consistency validation failed: {error_message}")
+        
+        logger.info("Event consistency validation passed - all events have matching definitions and spawn positions")
+        return validation_result
     
     def count_items_from_events(self, 
                              events_path: str, 
@@ -138,6 +219,23 @@ class EventCounter(EventAnalyzerTool):
             events_path = self.resolve_path(events_path)
             groups_path = self.resolve_path(groups_path)
             
+            # Get eventspawns path for validation
+            eventspawns_path = self.get_config('paths.eventspawns_file')
+            if not eventspawns_path:
+                msg = "No 'paths.eventspawns_file' configured in profile for event consistency validation"
+                logger.error(msg)
+                return {"error": msg}
+            eventspawns_path = self.resolve_path(eventspawns_path)
+            
+            # Validate event consistency between events.xml and cfgeventspawns.xml
+            logger.info("Performing event consistency validation...")
+            try:
+                validation_result = self.validate_event_consistency(events_path, eventspawns_path)
+                logger.info("Event consistency validation completed successfully")
+            except ValueError as e:
+                logger.error(f"Event consistency validation failed: {str(e)}")
+                return {"error": str(e)}
+            
             # Create output path if not provided
             if not output_path:
                 if specific_event and specific_event == "StaticMildrop":
@@ -162,12 +260,14 @@ class EventCounter(EventAnalyzerTool):
                 "success": True,
                 "events_file": events_path,
                 "groups_file": groups_path,
+                "eventspawns_file": eventspawns_path,
                 "output_file": csv_path,
                 "active": result["active"],
                 "active_events": result.get("active_events", []),
                 "nominal": result["nominal"],
                 "total_items": sum(result["item_counts"].values()),
-                "group_name": result["group_name"]
+                "group_name": result["group_name"],
+                "validation": validation_result
             }
                 
         except FileNotFoundError as e:
