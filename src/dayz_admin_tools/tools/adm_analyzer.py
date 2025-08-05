@@ -147,8 +147,11 @@ class DayZADMAnalyzer(FileBasedTool):
             'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
             'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
 
+            # --- Teleportation Events ---
+            'teleported': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*was teleported from:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\s*to:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\.\s*Reason:\s*(.+)$'),
+
             # --- Fallback/Player Position ---
-            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by))')
+            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by|was teleported))')
         }
 
         # --- Special/Other Events from config ---
@@ -190,6 +193,7 @@ class DayZADMAnalyzer(FileBasedTool):
             'deaths': 0,
             'building_events': 0,
             'emotes': 0,
+            'teleported_events': 0,
             'start_time': None,
             'end_time': None
         }
@@ -228,6 +232,8 @@ class DayZADMAnalyzer(FileBasedTool):
                         parse_stats['building_events'] += 1
                     elif event.event_type == 'emote':
                         parse_stats['emotes'] += 1
+                    elif event.event_type == 'teleported':
+                        parse_stats['teleported_events'] += 1
                     # Handle position tracking for active sessions
                     if event.position and event.player_id in self.current_sessions:
                         session = self.current_sessions[event.player_id]
@@ -636,6 +642,34 @@ class DayZADMAnalyzer(FileBasedTool):
                 'tool': tool
             })
             
+        elif event_type == 'teleported':
+            player_name = groups[1]
+            player_id = groups[2]
+            current_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
+            from_pos = (float(groups[6]), float(groups[7]), float(groups[8]))
+            to_pos = (float(groups[9]), float(groups[10]), float(groups[11]))
+            reason = groups[12].strip()
+            
+            position = current_pos  # Use current position as the event position
+            
+            # Extract restricted area name if present
+            restricted_area = None
+            if "Restricted Area:" in reason:
+                try:
+                    restricted_area = reason.split("Restricted Area:")[-1].strip()
+                except:
+                    restricted_area = None
+            
+            details.update({
+                'from_position': from_pos,
+                'to_position': to_pos,
+                'reason': reason,
+                'restricted_area': restricted_area,
+                'teleport_distance': ((to_pos[0] - from_pos[0]) ** 2 + 
+                                    (to_pos[1] - from_pos[1]) ** 2 + 
+                                    (to_pos[2] - from_pos[2]) ** 2) ** 0.5
+            })
+            
         else:
             # Generic parsing for other event types
             player_name = groups[1] if len(groups) > 1 else "Unknown"
@@ -700,6 +734,7 @@ class DayZADMAnalyzer(FileBasedTool):
             suicides = len([e for e in player_events if e.event_type == 'suicide'])
             emotes = len([e for e in player_events if e.event_type == 'emote'])
             building_actions = len([e for e in player_events if e.event_type in ('building', 'placed', 'folded', 'packed')])
+            teleported_events = len([e for e in player_events if e.event_type == 'teleported'])
             deaths_by_bear = len([e for e in player_events if e.event_type == 'death_by_bear'])
             deaths_by_wolf = len([e for e in player_events if e.event_type == 'death_by_wolf'])
             
@@ -727,6 +762,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 'accuracy (PvP)': (kills_pvp / max(hits_dealt_pvp, 1)) * 100 if hits_dealt_pvp > 0 else 0,
                 'emotes': emotes,
                 'building_actions': building_actions,
+                'teleported_events': teleported_events,
                 'avg_damage_per_hit (PvP)': damage_dealt_pvp / max(hits_dealt_pvp, 1) if hits_dealt_pvp > 0 else 0,
                 'deaths_by_bear': deaths_by_bear,
                 'deaths_by_wolf': deaths_by_wolf
@@ -803,7 +839,8 @@ class DayZADMAnalyzer(FileBasedTool):
             'rapid_reconnections': [],
             'suspicious_movement': [],
             'high_damage_dealers': [],
-            'stat_padding_suspects': []
+            'stat_padding_suspects': [],
+            'frequent_teleports': []
         }
         
         # Excessive suicides (more than 5 in a session)
@@ -870,6 +907,27 @@ class DayZADMAnalyzer(FileBasedTool):
                         'total_hits': stats['hits']
                     })
         
+        # Frequent teleportations (more than 3 teleports per session)
+        for player_id, sessions in self.player_sessions.items():
+            for session in sessions:
+                if not session.duration:
+                    continue
+                    
+                player_events = [e for e in self.events 
+                               if e.player_id == player_id 
+                               and session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
+                
+                teleports = len([e for e in player_events if e.event_type == 'teleported'])
+                session_hours = session.duration.total_seconds() / 3600
+                
+                if teleports > 3 or (session_hours > 0 and teleports / session_hours > 2):
+                    anomalies['frequent_teleports'].append({
+                        'player_name': session.player_name,
+                        'player_id': player_id,
+                        'teleports': teleports,
+                        'session_duration_hours': session_hours
+                    })
+        
         return anomalies
     
     def export_to_csv(self, output_prefix: str) -> List[str]:
@@ -908,7 +966,7 @@ class DayZADMAnalyzer(FileBasedTool):
                     'Avg Session Time (Minutes)', 'Distance Traveled', 'Deaths', 'Suicides',
                     'Kills (PvP)', 'K/D Ratio (PvP)', 'Hits Dealt (PvP)', 'Hits Taken (PvP)', 'Damage Dealt (PvP)',
                     'Damage Taken (PvP)', 'Avg Damage Per Hit (PvP)', 'Accuracy % (PvP)', 'Emotes', 'Building Actions',
-                    'Deaths by Bear', 'Deaths by Wolf'
+                    'Teleported Events', 'Deaths by Bear', 'Deaths by Wolf'
                 ]
                 # Add special event columns
                 columns += [f"{name.replace('_', ' ').title()} Events" for name in special_event_names]
@@ -923,7 +981,7 @@ class DayZADMAnalyzer(FileBasedTool):
                         round(stats['kd_ratio (PvP)'], 2), stats['hits_dealt (PvP)'], stats['hits_taken (PvP)'],
                         round(stats['damage_dealt (PvP)'], 2), round(stats['damage_taken (PvP)'], 2),
                         round(stats['avg_damage_per_hit (PvP)'], 2), round(stats['accuracy (PvP)'], 2), stats['emotes'], stats['building_actions'],
-                        stats.get('deaths_by_bear', 0),
+                        stats['teleported_events'], stats.get('deaths_by_bear', 0),
                         stats.get('deaths_by_wolf', 0)
                     ]
                     # Add special event counts
@@ -960,6 +1018,32 @@ class DayZADMAnalyzer(FileBasedTool):
                     ])
             created_files.append(combat_csv)
             logger.info(f"Combat events exported to: {combat_csv}")
+
+        # Teleportation events
+        teleport_events = [e for e in self.events if e.event_type == 'teleported']
+        if teleport_events:
+            teleport_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_teleport_events_{timestamp}.csv")
+            with open(teleport_csv, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Timestamp', 'Player Name', 'From X', 'From Y', 'From Z',
+                    'To X', 'To Y', 'To Z', 'Distance', 'Reason', 'Restricted Area'
+                ])
+                for event in teleport_events:
+                    details = event.details or {}
+                    from_pos = details.get('from_position', (None, None, None))
+                    to_pos = details.get('to_position', (None, None, None))
+                    writer.writerow([
+                        event.timestamp.isoformat(),
+                        event.player_name,
+                        from_pos[0], from_pos[1], from_pos[2],
+                        to_pos[0], to_pos[1], to_pos[2],
+                        round(details.get('teleport_distance', 0), 2),
+                        details.get('reason', ''),
+                        details.get('restricted_area', '')
+                    ])
+            created_files.append(teleport_csv)
+            logger.info(f"Teleportation events exported to: {teleport_csv}")
 
         # Building activities report (includes building, packed, placed, folded)
         building_events = [e for e in self.events if e.event_type in ('building', 'packed', 'placed', 'folded')]
@@ -1200,6 +1284,20 @@ Examples:
         md_lines.append(f"- Total Events Parsed: {summary['total_events_parsed']:,}")
         md_lines.append(f"- Unique Players: {summary['unique_players']}")
         md_lines.append(f"- Combat Events: {summary['total_combat_events']}")
+        
+        # Add teleportation event summary
+        teleport_events = [e for e in analyzer.events if e.event_type == 'teleported']
+        teleported_players = len([p for p in player_stats.get('players', {}) if player_stats['players'][p].get('teleported_events', 0) > 0])
+        restricted_violations = len([e for e in teleport_events if e.details and 'RestrictedArea' in (e.details.get('reason', ''))])
+        avg_distance = 0
+        if teleport_events:
+            total_distance = sum([e.details.get('teleport_distance', 0) for e in teleport_events if e.details])
+            avg_distance = round(total_distance / len(teleport_events), 2)
+        
+        md_lines.append(f"- Teleportation Events: {len(teleport_events)}")
+        md_lines.append(f"- Teleported Players: {teleported_players}")
+        md_lines.append(f"- Restricted Area Violations: {restricted_violations}")
+        md_lines.append(f"- Average Teleport Distance: {avg_distance} meters")
 
 
 
