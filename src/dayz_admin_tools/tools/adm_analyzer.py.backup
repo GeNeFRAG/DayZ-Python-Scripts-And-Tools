@@ -844,6 +844,428 @@ class DayZADMAnalyzer(FileBasedTool):
             'parsed_events': self.parse_summary.parsed_events
         }
         
+    def _extract_date_from_filename(self, filepath: str) -> datetime:
+        """Extract date from ADM log filename."""
+        # Pattern: DayZServer_X1_x64_2025-07-29_16-04-37.ADM
+        filename = Path(filepath).name
+        date_match = re.search(r'(\d{4}-\d{2}-\d{2})_(\d{2}-\d{2}-\d{2})', filename)
+        
+        if date_match:
+            date_str = date_match.group(1)
+            time_str = date_match.group(2).replace('-', ':')
+            return datetime.strptime(f"{date_str} {time_str}", "%Y-%m-%d %H:%M:%S")
+        else:
+            # Fallback to current date
+            logger.warning(f"Could not extract date from filename: {filename}")
+            return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    def _parse_line(self, line: str, base_date: datetime) -> Optional[PlayerEvent]:
+        """Parse a single log line into a PlayerEvent."""
+        # DEBUG: print the line being parsed
+        logger.debug(f"PARSING LINE: {line}")
+        for event_type, pattern in self.patterns.items():
+            match = pattern.match(line)
+            if match:
+                logger.debug(f"MATCHED EVENT TYPE: {event_type}")
+                return self._create_event_from_match(event_type, match, base_date, line)
+        logger.debug("NO PATTERN MATCHED FOR LINE")
+        return None
+    
+    def _create_timestamp(self, time_str: str, base_date: datetime) -> datetime:
+        """Create a timestamp from time string and base date, handling day rollover correctly."""
+        time_parts = time_str.split(':')
+        timestamp = base_date.replace(
+            hour=int(time_parts[0]),
+            minute=int(time_parts[1]),
+            second=int(time_parts[2])
+        )
+        
+        # Handle day rollover - compare against base date (date only, not time)
+        base_date_only = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        if timestamp < base_date_only:
+            timestamp += timedelta(days=1)
+            
+        return timestamp
+
+    def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> PlayerEvent:
+        """Create a PlayerEvent from a regex match."""
+        groups = match.groups()
+        time_str = self._safe_group_access(groups, 0, "00:00:00")
+        details = {'raw_line': line}
+        # ...existing code...
+        # --- Config-driven special events ---
+        special_events_cfg = (self.config or {}).get('special_events', {})
+        special_event_names = set(e.get('name') for e in special_events_cfg.get('events', [])) if special_events_cfg.get('enabled', False) else set()
+        if event_type in special_event_names:
+            # Generic handler for config-driven special events
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            # Try to extract position if present (groups 3,4,5)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            details.update({'event': event_type, 'raw_groups': groups})
+            # Optionally, extract more details if the config provides a 'fields' list in the future
+            return PlayerEvent(
+                timestamp=self._create_timestamp(time_str, base_date),
+                player_name=player_name,
+                player_id=player_id,
+                event_type=event_type,
+                position=position,
+                details=details
+            )
+        # (No hardcoded treasure_hunt block; handled by config-driven special event logic above)
+        elif event_type == 'packed':
+            # Special event for packed (building event)
+            logger.debug(f"PACKED EVENT GROUPS: {groups}")
+            # Use safe access instead of rigid length check
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            structure = self._safe_group_access(groups, 6)
+            tool = self._safe_group_access(groups, 7)
+            
+            details.update({
+                'action': 'packed',
+                'structure': structure,
+                'parent': '',
+                'tool': tool
+            })
+            # Return PlayerEvent immediately to avoid further processing and tuple index errors
+            return PlayerEvent(
+                timestamp=self._create_timestamp(time_str, base_date),
+                player_name=player_name,
+                player_id=player_id,
+                event_type='building',
+                position=position,
+                details=details
+            )
+        # ...existing code...
+        
+        # Parse timestamp using helper method
+        timestamp = self._create_timestamp(time_str, base_date)
+        
+        if event_type in ['connection', 'disconnection']:
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = None
+        
+        elif event_type == 'player_position':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+
+        elif event_type in ['placed', 'folded']:
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            
+        elif event_type == 'death':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            details.update({
+                'water': self._safe_group_float(groups, 6),
+                'energy': self._safe_group_float(groups, 7),
+                'bleed_sources': self._safe_group_int(groups, 8)
+            })
+            
+        elif event_type == 'hit':
+            # Victim is the first player mentioned
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)
+            attacker_id = self._safe_group_access(groups, 8)
+            attacker_pos = self._safe_position_extract(groups, 9, 10, 11)
+            hit_location = self._safe_group_access(groups, 12, "unknown").strip()
+            # DEBUG: log all groups for hit event
+            logger.debug(f"HIT GROUPS: {groups}")
+            damage = self._safe_group_float(groups, 14)  # Use damage from "for X damage" part
+            ammo = self._safe_group_access(groups, 15)
+            
+            # Robustly assign weapon and distance for all cases
+            weapon = None
+            distance = None
+            # If both weapon and distance are present (16 and 17), assign accordingly
+            if len(groups) > 17 and groups[16] is not None and groups[17] is not None:
+                weapon = self._safe_group_access(groups, 16).strip()
+                distance = self._safe_group_float(groups, 17)
+            # If only weapon is present (16), assign weapon, distance remains None
+            elif len(groups) > 16 and groups[16] is not None:
+                weapon = self._safe_group_access(groups, 16).strip()
+                distance = None
+            # If only ammo is present (15), treat as weapon for legacy lines
+            elif len(groups) > 15 and groups[15] is not None:
+                weapon = self._safe_group_access(groups, 15).strip()
+                distance = None
+
+            position = victim_pos
+            details.update({
+                'attacker_name': attacker_name,
+                'attacker_id': attacker_id,
+                'attacker_pos': attacker_pos,
+                'victim_hp': victim_hp,
+                'hit_location': hit_location,
+                'damage': damage,
+                'ammo': ammo,
+                'weapon': weapon,
+                'distance': distance
+            })
+
+            # Create combat event
+            combat_event = CombatEvent(
+                timestamp=timestamp,
+                attacker_name=attacker_name,
+                attacker_id=attacker_id,
+                victim_name=player_name,
+                victim_id=player_id,
+                weapon=weapon if weapon is not None else '',
+                damage=damage,
+                hit_location=hit_location,
+                distance=distance if distance is not None else 0.0,
+                attacker_pos=attacker_pos,
+                victim_pos=victim_pos
+            )
+            self.combat_events.append(combat_event)
+            self._invalidate_cache()  # Invalidate cache when combat data changes
+
+        elif event_type == 'env_hit':
+            # Environmental hit (e.g., hit by Fence with BarbedWireHit)
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)  # e.g., Fence
+            weapon = self._safe_group_access(groups, 8)         # e.g., BarbedWireHit
+            position = victim_pos
+            details.update({
+                'attacker_name': attacker_name,
+                'attacker_id': None,
+                'attacker_pos': None,
+                'victim_hp': victim_hp,
+                'hit_location': None,
+                'damage': None,
+                'ammo': None,
+                'weapon': weapon,
+                'distance': None
+            })
+
+        elif event_type == 'env_hit_simple':
+            # Simple environmental hit (e.g., hit by FallDamageHealth)
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)  # e.g., FallDamageHealth
+            position = victim_pos
+            details.update({
+                'attacker_name': attacker_name,
+                'attacker_id': None,
+                'attacker_pos': None,
+                'victim_hp': victim_hp,
+                'hit_location': None,
+                'damage': None,
+                'ammo': None,
+                'weapon': attacker_name,
+                'distance': None
+            })
+
+        elif event_type == 'explosion_hit':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            explosion_type = self._safe_group_access(groups, 7)
+            position = victim_pos
+            details.update({
+                'attacker_name': 'explosion',
+                'attacker_id': None,
+                'attacker_pos': None,
+                'victim_hp': victim_hp,
+                'hit_location': None,
+                'damage': None,
+                'ammo': None,
+                'weapon': explosion_type,
+                'distance': None
+            })
+
+        elif event_type == 'death_other':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            killer = self._safe_group_access(groups, 6)
+            position = victim_pos
+            # Map animal classnames to friendly names and special event types
+            animal_map = {
+                'Animal_UrsusArctos': ('Bear', 'death_by_bear'),
+                'Animal_CanisLupus_Grey': ('Wolf', 'death_by_wolf'),
+                'Animal_CanisLupus_White': ('Wolf', 'death_by_wolf'),
+            }
+            if killer in animal_map:
+                friendly, special_event = animal_map[killer]
+                details.update({
+                    'attacker_name': friendly,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True,
+                    'special_event': special_event
+                })
+                event_type = special_event
+            else:
+                details.update({
+                    'attacker_name': killer,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True
+                })
+            
+        elif event_type == 'kill':
+            player_name = self._safe_group_access(groups, 1)  # Victim
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            attacker_name = self._safe_group_access(groups, 6)
+            attacker_id = self._safe_group_access(groups, 7)
+            attacker_pos = self._safe_position_extract(groups, 8, 9, 10)
+            weapon = self._safe_group_access(groups, 11).strip()
+            distance = self._safe_group_float(groups, 12)
+
+            position = victim_pos
+            details.update({
+                'attacker_name': attacker_name,
+                'attacker_id': attacker_id,
+                'attacker_pos': attacker_pos,
+                'weapon': weapon,
+                'distance': distance,
+                'kill': True
+            })
+
+            # Aggregate all hit events at the kill timestamp for this attacker/victim
+            total_damage = 0.0
+            hit_locations = []
+            events_to_remove = set()
+            for idx, prev_event in enumerate(self.combat_events):
+                if (
+                    prev_event.attacker_id == attacker_id and
+                    prev_event.victim_id == player_id and
+                    prev_event.timestamp == timestamp and
+                    not prev_event.kill
+                ):
+                    total_damage += prev_event.damage
+                    if prev_event.hit_location:
+                        hit_locations.append(prev_event.hit_location)
+                    events_to_remove.add(idx)
+
+            # Remove hit events at the kill timestamp to avoid double-counting in stats
+            # Create new list without the events to remove
+            self.combat_events = [event for idx, event in enumerate(self.combat_events) 
+                                if idx not in events_to_remove]
+
+            # If no hits at the same timestamp, fallback to previous logic (most recent hit in 30s window)
+            if total_damage == 0.0:
+                for prev_event in reversed(self.combat_events):
+                    if (
+                        prev_event.attacker_id == attacker_id and
+                        prev_event.victim_id == player_id and
+                        abs((timestamp - prev_event.timestamp).total_seconds()) < 30
+                    ):
+                        total_damage = prev_event.damage
+                        hit_locations = [prev_event.hit_location] if prev_event.hit_location else []
+                        break
+
+            combat_event = CombatEvent(
+                timestamp=timestamp,
+                attacker_name=attacker_name,
+                attacker_id=attacker_id,
+                victim_name=player_name,
+                victim_id=player_id,
+                weapon=weapon,
+                damage=total_damage,
+                hit_location=", ".join(hit_locations),
+                distance=distance,
+                attacker_pos=attacker_pos,
+                victim_pos=victim_pos,
+                kill=True
+            )
+            self.combat_events.append(combat_event)
+            self._invalidate_cache()  # Invalidate cache when combat data changes
+            
+        elif event_type in ['suicide', 'unconscious', 'conscious', 'emote']:
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            # For suicide, pos may be missing
+            position = self._safe_position_extract(groups, 3, 4, 5)
+
+            if event_type == 'emote':
+                details['emote'] = self._safe_group_access(groups, 6)
+                
+        elif event_type == 'building':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            action = self._safe_group_access(groups, 6)  # Built or Dismantled
+            structure = self._safe_group_access(groups, 7)
+            # on_or_from = groups[8]  # 'on' or 'from', not used in details
+            parent = self._safe_group_access(groups, 9)
+            tool = self._safe_group_access(groups, 10)
+            details.update({
+                'action': action,
+                'structure': structure,
+                'parent': parent,
+                'tool': tool
+            })
+            
+        elif event_type == 'teleported':
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            current_pos = self._safe_position_extract(groups, 3, 4, 5)
+            from_pos = self._safe_position_extract(groups, 6, 7, 8)
+            to_pos = self._safe_position_extract(groups, 9, 10, 11)
+            reason = self._safe_group_access(groups, 12).strip()
+            
+            position = current_pos  # Use current position as the event position
+            
+            # Extract restricted area name if present
+            restricted_area = None
+            if "Restricted Area:" in reason:
+                try:
+                    restricted_area = reason.split("Restricted Area:")[-1].strip()
+                except:
+                    restricted_area = None
+            
+            # Calculate teleport distance safely
+            teleport_distance = 0.0
+            if from_pos and to_pos:
+                teleport_distance = ((to_pos[0] - from_pos[0]) ** 2 + 
+                                   (to_pos[1] - from_pos[1]) ** 2 + 
+                                   (to_pos[2] - from_pos[2]) ** 2) ** 0.5
+            
+            details.update({
+                'from_position': from_pos,
+                'to_position': to_pos,
+                'reason': reason,
+                'restricted_area': restricted_area,
+                'teleport_distance': teleport_distance
+            })
+            
+        else:
+            # Generic parsing for other event types
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = None
+            
+        return PlayerEvent(
+            timestamp=timestamp,
+            player_name=player_name,
+            player_id=player_id,
+            event_type=event_type,
+            position=position,
+            details=details
+        )
+    
     def _handle_connection(self, event: PlayerEvent):
         """Handle player connection event."""
         # Close any existing session for this player
