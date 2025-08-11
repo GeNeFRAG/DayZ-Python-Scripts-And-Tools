@@ -151,7 +151,8 @@ class DayZADMAnalyzer(FileBasedTool):
             'teleported': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*was teleported from:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\s*to:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\.\s*Reason:\s*(.+)$'),
 
             # --- Fallback/Player Position ---
-            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)(?!.*(placed|Built|Dismantled|folded|hit by|killed by|was teleported))')
+            # Match simple position lines that end after the position coordinates
+            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*$')
         }
 
         # --- Special/Other Events from config ---
@@ -292,10 +293,47 @@ class DayZADMAnalyzer(FileBasedTool):
             
         return timestamp
 
+    def _safe_group_access(self, groups: tuple, index: int, default: str = "Unknown") -> str:
+        """Safely access regex group by index, returning default if index out of range or None."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return groups[index]
+            return default
+        except (IndexError, TypeError):
+            return default
+    
+    def _safe_group_float(self, groups: tuple, index: int, default: float = 0.0) -> float:
+        """Safely access regex group as float, returning default if index out of range, None, or conversion fails."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return float(groups[index])
+            return default
+        except (IndexError, TypeError, ValueError):
+            return default
+    
+    def _safe_group_int(self, groups: tuple, index: int, default: int = 0) -> int:
+        """Safely access regex group as int, returning default if index out of range, None, or conversion fails."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return int(groups[index])
+            return default
+        except (IndexError, TypeError, ValueError):
+            return default
+
+    def _safe_position_extract(self, groups: tuple, x_index: int, y_index: int, z_index: int) -> Optional[Tuple[float, float, float]]:
+        """Safely extract position coordinates from regex groups."""
+        try:
+            if (x_index < len(groups) and y_index < len(groups) and z_index < len(groups) and
+                groups[x_index] is not None and groups[y_index] is not None and groups[z_index] is not None):
+                return (float(groups[x_index]), float(groups[y_index]), float(groups[z_index]))
+            return None
+        except (IndexError, TypeError, ValueError):
+            return None
+
     def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> PlayerEvent:
         """Create a PlayerEvent from a regex match."""
         groups = match.groups()
-        time_str = groups[0]
+        time_str = self._safe_group_access(groups, 0, "00:00:00")
         details = {'raw_line': line}
         # ...existing code...
         # --- Config-driven special events ---
@@ -303,13 +341,10 @@ class DayZADMAnalyzer(FileBasedTool):
         special_event_names = set(e.get('name') for e in special_events_cfg.get('events', [])) if special_events_cfg.get('enabled', False) else set()
         if event_type in special_event_names:
             # Generic handler for config-driven special events
-            player_name = groups[1] if len(groups) > 1 else "Unknown"
-            player_id = groups[2] if len(groups) > 2 else "Unknown"
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
             # Try to extract position if present (groups 3,4,5)
-            try:
-                position = (float(groups[3]), float(groups[4]), float(groups[5]))
-            except Exception:
-                position = None
+            position = self._safe_position_extract(groups, 3, 4, 5)
             details.update({'event': event_type, 'raw_groups': groups})
             # Optionally, extract more details if the config provides a 'fields' list in the future
             return PlayerEvent(
@@ -324,99 +359,87 @@ class DayZADMAnalyzer(FileBasedTool):
         elif event_type == 'packed':
             # Special event for packed (building event)
             logger.debug(f"PACKED EVENT GROUPS: {groups}")
-            if len(groups) == 8:
-                player_name = groups[1]
-                player_id = groups[2]
-                try:
-                    position = (float(groups[3]), float(groups[4]), float(groups[5]))
-                except Exception as e:
-                    logger.error(f"Error parsing position for packed event: {e}")
-                    position = None
-                structure = groups[6]
-                tool = groups[7]
-                details.update({
-                    'action': 'packed',
-                    'structure': structure,
-                    'parent': '',
-                    'tool': tool
-                })
-                # Return PlayerEvent immediately to avoid further processing and tuple index errors
-                return PlayerEvent(
-                    timestamp=self._create_timestamp(time_str, base_date),
-                    player_name=player_name,
-                    player_id=player_id,
-                    event_type='building',
-                    position=position,
-                    details=details
-                )
-            else:
-                logger.error(f"Malformed packed event, skipping: {groups}")
-                return None
+            # Use safe access instead of rigid length check
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            structure = self._safe_group_access(groups, 6)
+            tool = self._safe_group_access(groups, 7)
+            
+            details.update({
+                'action': 'packed',
+                'structure': structure,
+                'parent': '',
+                'tool': tool
+            })
+            # Return PlayerEvent immediately to avoid further processing and tuple index errors
+            return PlayerEvent(
+                timestamp=self._create_timestamp(time_str, base_date),
+                player_name=player_name,
+                player_id=player_id,
+                event_type='building',
+                position=position,
+                details=details
+            )
         # ...existing code...
         
         # Parse timestamp using helper method
         timestamp = self._create_timestamp(time_str, base_date)
         
         if event_type in ['connection', 'disconnection']:
-            player_name = groups[1]
-            player_id = groups[2]
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
             position = None
         
         elif event_type == 'player_position':
-            player_name = groups[1]
-            player_id = groups[2]
-            position = (float(groups[3]), float(groups[4]), float(groups[5]))
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
 
         elif event_type in ['placed', 'folded']:
-            player_name = groups[1]
-            player_id = groups[2]
-            try:
-                position = (float(groups[3]), float(groups[4]), float(groups[5]))
-            except Exception as e:
-                logger.error(f"Error parsing position for {event_type} event: {e}")
-                position = None
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
             
         elif event_type == 'death':
-            player_name = groups[1]
-            player_id = groups[2]
-            position = (float(groups[3]), float(groups[4]), float(groups[5]))
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
             details.update({
-                'water': float(groups[6]),
-                'energy': float(groups[7]),
-                'bleed_sources': int(groups[8])
+                'water': self._safe_group_float(groups, 6),
+                'energy': self._safe_group_float(groups, 7),
+                'bleed_sources': self._safe_group_int(groups, 8)
             })
             
         elif event_type == 'hit':
             # Victim is the first player mentioned
-            player_name = groups[1]
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            victim_hp = float(groups[6])
-            attacker_name = groups[7]
-            attacker_id = groups[8]
-            attacker_pos = (float(groups[9]), float(groups[10]), float(groups[11]))
-            hit_location = groups[12].strip()
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)
+            attacker_id = self._safe_group_access(groups, 8)
+            attacker_pos = self._safe_position_extract(groups, 9, 10, 11)
+            hit_location = self._safe_group_access(groups, 12, "unknown").strip()
             # DEBUG: log all groups for hit event
             logger.debug(f"HIT GROUPS: {groups}")
-            damage = float(groups[13])
-            ammo = groups[14]
+            damage = self._safe_group_float(groups, 13)
+            ammo = self._safe_group_access(groups, 14)
+            
             # Robustly assign weapon and distance for all cases
             weapon = None
             distance = None
-            # If both weapon and distance are present (17 and 18), assign accordingly
+            # If both weapon and distance are present (16 and 17), assign accordingly
             if len(groups) > 17 and groups[16] is not None and groups[17] is not None:
-                weapon = groups[16].strip()
-                try:
-                    distance = float(groups[17])
-                except (TypeError, ValueError):
-                    distance = None
+                weapon = self._safe_group_access(groups, 16).strip()
+                distance = self._safe_group_float(groups, 17)
             # If only weapon is present (16), assign weapon, distance remains None
             elif len(groups) > 16 and groups[16] is not None:
-                weapon = groups[16].strip()
+                weapon = self._safe_group_access(groups, 16).strip()
                 distance = None
             # If only ammo is present (15), treat as weapon for legacy lines
             elif len(groups) > 15 and groups[15] is not None:
-                weapon = groups[15].strip()
+                weapon = self._safe_group_access(groups, 15).strip()
                 distance = None
 
             position = victim_pos
@@ -450,12 +473,12 @@ class DayZADMAnalyzer(FileBasedTool):
 
         elif event_type == 'env_hit':
             # Environmental hit (e.g., hit by Fence with BarbedWireHit)
-            player_name = groups[1]
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            victim_hp = float(groups[6])
-            attacker_name = groups[7]  # e.g., Fence
-            weapon = groups[8]         # e.g., BarbedWireHit
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)  # e.g., Fence
+            weapon = self._safe_group_access(groups, 8)         # e.g., BarbedWireHit
             position = victim_pos
             details.update({
                 'attacker_name': attacker_name,
@@ -471,11 +494,11 @@ class DayZADMAnalyzer(FileBasedTool):
 
         elif event_type == 'env_hit_simple':
             # Simple environmental hit (e.g., hit by FallDamageHealth)
-            player_name = groups[1]
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            victim_hp = float(groups[6])
-            attacker_name = groups[7]  # e.g., FallDamageHealth
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            attacker_name = self._safe_group_access(groups, 7)  # e.g., FallDamageHealth
             position = victim_pos
             details.update({
                 'attacker_name': attacker_name,
@@ -490,11 +513,11 @@ class DayZADMAnalyzer(FileBasedTool):
             })
 
         elif event_type == 'explosion_hit':
-            player_name = groups[1]
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            victim_hp = float(groups[6])
-            explosion_type = groups[7]
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            victim_hp = self._safe_group_float(groups, 6)
+            explosion_type = self._safe_group_access(groups, 7)
             position = victim_pos
             details.update({
                 'attacker_name': 'explosion',
@@ -509,10 +532,10 @@ class DayZADMAnalyzer(FileBasedTool):
             })
 
         elif event_type == 'death_other':
-            player_name = groups[1]
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            killer = groups[6]
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            killer = self._safe_group_access(groups, 6)
             position = victim_pos
             # Map animal classnames to friendly names and special event types
             animal_map = {
@@ -543,14 +566,14 @@ class DayZADMAnalyzer(FileBasedTool):
                 })
             
         elif event_type == 'kill':
-            player_name = groups[1]  # Victim
-            player_id = groups[2]
-            victim_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            attacker_name = groups[6]
-            attacker_id = groups[7]
-            attacker_pos = (float(groups[8]), float(groups[9]), float(groups[10]))
-            weapon = groups[11].strip()
-            distance = float(groups[12])
+            player_name = self._safe_group_access(groups, 1)  # Victim
+            player_id = self._safe_group_access(groups, 2)
+            victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+            attacker_name = self._safe_group_access(groups, 6)
+            attacker_id = self._safe_group_access(groups, 7)
+            attacker_pos = self._safe_position_extract(groups, 8, 9, 10)
+            weapon = self._safe_group_access(groups, 11).strip()
+            distance = self._safe_group_float(groups, 12)
 
             position = victim_pos
             details.update({
@@ -565,7 +588,7 @@ class DayZADMAnalyzer(FileBasedTool):
             # Aggregate all hit events at the kill timestamp for this attacker/victim
             total_damage = 0.0
             hit_locations = []
-            hit_indices = []
+            events_to_remove = set()
             for idx, prev_event in enumerate(self.combat_events):
                 if (
                     prev_event.attacker_id == attacker_id and
@@ -576,11 +599,12 @@ class DayZADMAnalyzer(FileBasedTool):
                     total_damage += prev_event.damage
                     if prev_event.hit_location:
                         hit_locations.append(prev_event.hit_location)
-                    hit_indices.append(idx)
+                    events_to_remove.add(idx)
 
             # Remove hit events at the kill timestamp to avoid double-counting in stats
-            for idx in reversed(hit_indices):
-                del self.combat_events[idx]
+            # Create new list without the events to remove
+            self.combat_events = [event for idx, event in enumerate(self.combat_events) 
+                                if idx not in events_to_remove]
 
             # If no hits at the same timestamp, fallback to previous logic (most recent hit in 30s window)
             if total_damage == 0.0:
@@ -611,29 +635,23 @@ class DayZADMAnalyzer(FileBasedTool):
             self.combat_events.append(combat_event)
             
         elif event_type in ['suicide', 'unconscious', 'conscious', 'emote']:
-            player_name = groups[1]
-            player_id = groups[2]
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
             # For suicide, pos may be missing
-            if event_type == 'suicide' and groups[3] is None:
-                position = None
-            else:
-                try:
-                    position = (float(groups[3]), float(groups[4]), float(groups[5]))
-                except (TypeError, ValueError, IndexError):
-                    position = None
+            position = self._safe_position_extract(groups, 3, 4, 5)
 
             if event_type == 'emote':
-                details['emote'] = groups[6]
+                details['emote'] = self._safe_group_access(groups, 6)
                 
         elif event_type == 'building':
-            player_name = groups[1]
-            player_id = groups[2]
-            position = (float(groups[3]), float(groups[4]), float(groups[5]))
-            action = groups[6]  # Built or Dismantled
-            structure = groups[7]
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            position = self._safe_position_extract(groups, 3, 4, 5)
+            action = self._safe_group_access(groups, 6)  # Built or Dismantled
+            structure = self._safe_group_access(groups, 7)
             # on_or_from = groups[8]  # 'on' or 'from', not used in details
-            parent = groups[9]
-            tool = groups[10]
+            parent = self._safe_group_access(groups, 9)
+            tool = self._safe_group_access(groups, 10)
             details.update({
                 'action': action,
                 'structure': structure,
@@ -642,12 +660,12 @@ class DayZADMAnalyzer(FileBasedTool):
             })
             
         elif event_type == 'teleported':
-            player_name = groups[1]
-            player_id = groups[2]
-            current_pos = (float(groups[3]), float(groups[4]), float(groups[5]))
-            from_pos = (float(groups[6]), float(groups[7]), float(groups[8]))
-            to_pos = (float(groups[9]), float(groups[10]), float(groups[11]))
-            reason = groups[12].strip()
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
+            current_pos = self._safe_position_extract(groups, 3, 4, 5)
+            from_pos = self._safe_position_extract(groups, 6, 7, 8)
+            to_pos = self._safe_position_extract(groups, 9, 10, 11)
+            reason = self._safe_group_access(groups, 12).strip()
             
             position = current_pos  # Use current position as the event position
             
@@ -659,20 +677,25 @@ class DayZADMAnalyzer(FileBasedTool):
                 except:
                     restricted_area = None
             
+            # Calculate teleport distance safely
+            teleport_distance = 0.0
+            if from_pos and to_pos:
+                teleport_distance = ((to_pos[0] - from_pos[0]) ** 2 + 
+                                   (to_pos[1] - from_pos[1]) ** 2 + 
+                                   (to_pos[2] - from_pos[2]) ** 2) ** 0.5
+            
             details.update({
                 'from_position': from_pos,
                 'to_position': to_pos,
                 'reason': reason,
                 'restricted_area': restricted_area,
-                'teleport_distance': ((to_pos[0] - from_pos[0]) ** 2 + 
-                                    (to_pos[1] - from_pos[1]) ** 2 + 
-                                    (to_pos[2] - from_pos[2]) ** 2) ** 0.5
+                'teleport_distance': teleport_distance
             })
             
         else:
             # Generic parsing for other event types
-            player_name = groups[1] if len(groups) > 1 else "Unknown"
-            player_id = groups[2] if len(groups) > 2 else "Unknown"
+            player_name = self._safe_group_access(groups, 1)
+            player_id = self._safe_group_access(groups, 2)
             position = None
             
         return PlayerEvent(
@@ -891,8 +914,10 @@ class DayZADMAnalyzer(FileBasedTool):
         # High damage dealers (suspiciously high damage per hit)
         combat_stats = defaultdict(lambda: {'total_damage': 0, 'hits': 0})
         for event in self.combat_events:
-            combat_stats[event.attacker_id]['total_damage'] += event.damage
-            combat_stats[event.attacker_id]['hits'] += 1
+            # Filter out environmental damage (None or empty attacker_id)
+            if event.attacker_id and event.attacker_id.strip():
+                combat_stats[event.attacker_id]['total_damage'] += event.damage
+                combat_stats[event.attacker_id]['hits'] += 1
         
         for player_id, stats in combat_stats.items():
             if stats['hits'] > 0:
