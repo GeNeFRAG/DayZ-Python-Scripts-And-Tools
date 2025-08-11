@@ -117,6 +117,13 @@ class DayZADMAnalyzer(FileBasedTool):
         self.player_sessions: Dict[str, List[PlayerSession]] = defaultdict(list)
         self.current_sessions: Dict[str, PlayerSession] = {}
 
+        # Cached derived maps for performance optimization
+        self._events_by_player: Optional[Dict[str, List[PlayerEvent]]] = None
+        self._combat_events_by_attacker: Optional[Dict[str, List[CombatEvent]]] = None
+        self._combat_events_by_victim: Optional[Dict[str, List[CombatEvent]]] = None
+        self._player_id_to_name: Optional[Dict[str, str]] = None
+        self._cache_dirty: bool = True
+
         # Use self.log_dir from base class for log directory
 
         # Pre-compiled regex patterns for performance
@@ -167,6 +174,65 @@ class DayZADMAnalyzer(FileBasedTool):
                     except Exception as e:
                         logger.error(f"Failed to compile special event regexp for '{name}': {e}")
         
+    def _invalidate_cache(self):
+        """Invalidate cached derived maps when data changes."""
+        self._events_by_player = None
+        self._combat_events_by_attacker = None
+        self._combat_events_by_victim = None
+        self._player_id_to_name = None
+        self._cache_dirty = True
+    
+    def _ensure_cache_valid(self):
+        """Ensure cached derived maps are built and up to date."""
+        if not self._cache_dirty and self._events_by_player is not None:
+            return
+            
+        # Build events_by_player cache
+        self._events_by_player = defaultdict(list)
+        for event in self.events:
+            if event.player_id:
+                self._events_by_player[event.player_id].append(event)
+        
+        # Build combat_events_by_attacker cache
+        self._combat_events_by_attacker = defaultdict(list)
+        for event in self.combat_events:
+            if event.attacker_id and event.attacker_id.strip():
+                self._combat_events_by_attacker[event.attacker_id].append(event)
+        
+        # Build combat_events_by_victim cache
+        self._combat_events_by_victim = defaultdict(list)
+        for event in self.combat_events:
+            if event.victim_id and event.victim_id.strip():
+                self._combat_events_by_victim[event.victim_id].append(event)
+        
+        # Build player_id_to_name cache
+        self._player_id_to_name = {}
+        for event in self.events:
+            if event.player_id and event.player_name:
+                self._player_id_to_name[event.player_id] = event.player_name
+        
+        self._cache_dirty = False
+    
+    def get_events_by_player(self, player_id: str) -> List[PlayerEvent]:
+        """Get all events for a specific player using cached lookup."""
+        self._ensure_cache_valid()
+        return self._events_by_player.get(player_id, [])
+    
+    def get_combat_events_by_attacker(self, player_id: str) -> List[CombatEvent]:
+        """Get all combat events where player is the attacker using cached lookup."""
+        self._ensure_cache_valid()
+        return self._combat_events_by_attacker.get(player_id, [])
+    
+    def get_combat_events_by_victim(self, player_id: str) -> List[CombatEvent]:
+        """Get all combat events where player is the victim using cached lookup."""
+        self._ensure_cache_valid()
+        return self._combat_events_by_victim.get(player_id, [])
+    
+    def get_player_name(self, player_id: str) -> str:
+        """Get player name for a player ID using cached lookup."""
+        self._ensure_cache_valid()
+        return self._player_id_to_name.get(player_id, "Unknown")
+        
     def parse_log_file(self, log_file: str) -> Dict[str, Any]:
         """
         Parse a DayZ ADM log file.
@@ -212,6 +278,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 event = self._parse_line(line, base_date)
                 if event:
                     self.events.append(event)
+                    self._invalidate_cache()  # Invalidate cache when data changes
                     parse_stats['parsed_events'] += 1
                     # Update timestamps
                     if parse_stats['start_time'] is None or event.timestamp < parse_stats['start_time']:
@@ -470,6 +537,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 victim_pos=victim_pos
             )
             self.combat_events.append(combat_event)
+            self._invalidate_cache()  # Invalidate cache when combat data changes
 
         elif event_type == 'env_hit':
             # Environmental hit (e.g., hit by Fence with BarbedWireHit)
@@ -633,6 +701,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 kill=True
             )
             self.combat_events.append(combat_event)
+            self._invalidate_cache()  # Invalidate cache when combat data changes
             
         elif event_type in ['suicide', 'unconscious', 'conscious', 'emote']:
             player_name = self._safe_group_access(groups, 1)
@@ -747,12 +816,14 @@ class DayZADMAnalyzer(FileBasedTool):
             total_playtime = sum(s.duration.total_seconds() if s.duration else 0 for s in sessions)
             total_distance = sum(s.distance_traveled for s in sessions)
             
-            # Count player events
-            player_events = [e for e in self.events if e.player_id == player_id]
+            # Count player events using cached lookup
+            player_events = self.get_events_by_player(player_id)
+            player_combat_as_victim = self.get_combat_events_by_victim(player_id)
+            
             # Count all deaths for reporting
             deaths = len([e for e in player_events if e.event_type == 'death'])
             # Count only deaths caused by another player for K/D
-            deaths_by_player = len([e for e in self.combat_events if e.victim_id == player_id and e.kill])
+            deaths_by_player = len([e for e in player_combat_as_victim if e.kill])
             suicides = len([e for e in player_events if e.event_type == 'suicide'])
             emotes = len([e for e in player_events if e.event_type == 'emote'])
             building_actions = len([e for e in player_events if e.event_type in ('building', 'placed', 'folded', 'packed')])
@@ -760,12 +831,18 @@ class DayZADMAnalyzer(FileBasedTool):
             deaths_by_bear = len([e for e in player_events if e.event_type == 'death_by_bear'])
             deaths_by_wolf = len([e for e in player_events if e.event_type == 'death_by_wolf'])
             
-            # PvP-only combat statistics (add (PvP) suffix to keys)
-            kills_pvp = len([e for e in self.combat_events if e.attacker_id == player_id and e.kill])
-            hits_dealt_pvp = len([e for e in self.combat_events if e.attacker_id == player_id and e.victim_id and e.attacker_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id])
-            hits_taken_pvp = len([e for e in self.combat_events if e.victim_id == player_id and e.attacker_id and e.victim_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id])
-            damage_dealt_pvp = sum(e.damage for e in self.combat_events if e.attacker_id == player_id and e.victim_id and e.attacker_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id)
-            damage_taken_pvp = sum(e.damage for e in self.combat_events if e.victim_id == player_id and e.attacker_id and e.victim_id and e.attacker_id != '' and e.victim_id != '' and e.attacker_id != e.victim_id)
+            # PvP-only combat statistics using cached lookups
+            player_combat_as_attacker = self.get_combat_events_by_attacker(player_id)
+            
+            kills_pvp = len([e for e in player_combat_as_attacker if e.kill])
+            # Filter for valid PvP events (both attacker and victim must be valid player IDs)
+            pvp_hits_dealt = [e for e in player_combat_as_attacker if e.victim_id and e.victim_id.strip() and e.attacker_id != e.victim_id]
+            pvp_hits_taken = [e for e in player_combat_as_victim if e.attacker_id and e.attacker_id.strip() and e.attacker_id != e.victim_id]
+            
+            hits_dealt_pvp = len(pvp_hits_dealt)
+            hits_taken_pvp = len(pvp_hits_taken)
+            damage_dealt_pvp = sum(e.damage for e in pvp_hits_dealt)
+            damage_taken_pvp = sum(e.damage for e in pvp_hits_taken)
 
             stats['players'][player_id] = {
                 'name': player_name,
@@ -871,9 +948,10 @@ class DayZADMAnalyzer(FileBasedTool):
                 if not session.duration:
                     continue
                     
-                player_events = [e for e in self.events 
-                               if e.player_id == player_id 
-                               and session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
+                # Use cached lookup and filter by session time
+                all_player_events = self.get_events_by_player(player_id)
+                player_events = [e for e in all_player_events
+                               if session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
                 
                 suicides = len([e for e in player_events if e.event_type == 'suicide'])
                 session_hours = session.duration.total_seconds() / 3600
@@ -923,7 +1001,7 @@ class DayZADMAnalyzer(FileBasedTool):
             if stats['hits'] > 0:
                 avg_damage = stats['total_damage'] / stats['hits']
                 if avg_damage > 150:  # Suspiciously high average damage
-                    player_name = next((e.player_name for e in self.events if e.player_id == player_id), "Unknown")
+                    player_name = self.get_player_name(player_id)
                     anomalies['high_damage_dealers'].append({
                         'player_name': player_name,
                         'player_id': player_id,
@@ -937,9 +1015,10 @@ class DayZADMAnalyzer(FileBasedTool):
                 if not session.duration:
                     continue
                     
-                player_events = [e for e in self.events 
-                               if e.player_id == player_id 
-                               and session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
+                # Use cached lookup and filter by session time
+                all_player_events = self.get_events_by_player(player_id)
+                player_events = [e for e in all_player_events
+                               if session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
                 
                 teleports = len([e for e in player_events if e.event_type == 'teleported'])
                 session_hours = session.duration.total_seconds() / 3600
@@ -972,13 +1051,13 @@ class DayZADMAnalyzer(FileBasedTool):
         # --- Config-driven special events ---
         special_events_cfg = (self.config or {}).get('special_events', {})
         special_event_names = [e.get('name') for e in special_events_cfg.get('events', [])] if special_events_cfg.get('enabled', False) else []
-        # Count special events per player
+        # Count special events per player using cached lookups
         special_event_counts = {name: {} for name in special_event_names}
-        for e in self.events:
-            if e.event_type in special_event_names:
-                pid = getattr(e, 'player_id', None)
-                if pid:
-                    special_event_counts[e.event_type][pid] = special_event_counts[e.event_type].get(pid, 0) + 1
+        self._ensure_cache_valid()  # Ensure cache is built
+        for player_id, events in self._events_by_player.items():
+            for event in events:
+                if event.event_type in special_event_names:
+                    special_event_counts[event.event_type][player_id] = special_event_counts[event.event_type].get(player_id, 0) + 1
 
         if player_stats['players']:
             player_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_player_stats_{timestamp}.csv")
