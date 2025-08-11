@@ -11,7 +11,7 @@ import csv
 import logging
 import re
 from collections import defaultdict, Counter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
@@ -136,6 +136,7 @@ class DayZADMParser:
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the parser with configuration."""
         self.config = config or {}
+        self.last_timestamp = None  # Track last timestamp for midnight rollover detection
         self._setup_patterns()
     
     def _setup_patterns(self):
@@ -211,6 +212,9 @@ class DayZADMParser:
         
         # Extract date from filename for timestamp parsing
         base_date = self._extract_date_from_filename(str(log_path))
+        
+        # Reset timestamp tracker for new file
+        self.last_timestamp = None
         
         with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
             for line_number, line in enumerate(f, 1):
@@ -397,23 +401,33 @@ class DayZADMParser:
             return None
     
     def _create_timestamp(self, time_str: str, base_date: datetime) -> datetime:
-        """Create a timestamp from time string and base date, handling day rollover correctly."""
+        """Create a timestamp from time string and base date, handling midnight rollover correctly."""
         try:
             time_parts = time_str.split(':')
-            timestamp = base_date.replace(
+            parsed_time = time(
                 hour=int(time_parts[0]),
                 minute=int(time_parts[1]),
                 second=int(time_parts[2])
             )
             
-            # Handle day rollover (if timestamp is more than 12 hours behind base_date, assume next day)
-            if (base_date - timestamp).total_seconds() > 43200:  # 12 hours
+            # Combine base date with parsed time
+            timestamp = datetime.combine(base_date.date(), parsed_time)
+            
+            # Handle midnight rollover: if current time < last timestamp, add 1 day
+            if self.last_timestamp and timestamp < self.last_timestamp:
                 timestamp += timedelta(days=1)
+                
+            # Update last timestamp tracker
+            self.last_timestamp = timestamp
                 
             return timestamp
         except Exception as e:
             logger.error(f"Error creating timestamp from '{time_str}': {e}")
-            return base_date
+            # Fallback timestamp
+            fallback = base_date.replace(hour=0, minute=0, second=0)
+            if self.last_timestamp:
+                self.last_timestamp = fallback
+            return fallback
     
     def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> Optional[PlayerEvent]:
         """Create a PlayerEvent from a regex match - includes combat event creation."""
