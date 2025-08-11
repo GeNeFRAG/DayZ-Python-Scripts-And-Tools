@@ -474,6 +474,14 @@ class DayZADMParser:
                 weapon = self._safe_named_group_access(match, 'weapon', 'Unknown')
                 distance = self._safe_named_group_float(match, 'distance')
                 
+                # Handle melee weapons: if no weapon specified but ammo contains melee weapon, use ammo as weapon
+                if weapon == 'Unknown' and ammo:
+                    # Check if ammo field contains a melee weapon
+                    melee_weapons = ['MeleeFist', 'MeleeAxe', 'MeleeKnife', 'MeleeBat', 'MeleeShovel', 
+                                   'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar']
+                    if any(melee in ammo for melee in melee_weapons):
+                        weapon = ammo
+                
                 # Check if this is a kill (victim has DEAD in original line or HP is 0)
                 is_kill = victim_hp == 0.0 or "(DEAD)" in line
                 
