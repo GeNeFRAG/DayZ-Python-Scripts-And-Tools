@@ -94,6 +94,396 @@ class PlayerSession:
         return total_distance
 
 
+@dataclass
+class ParseResult:
+    """Result of parsing a single line."""
+    event: Optional[PlayerEvent] = None
+    error: Optional[str] = None
+    line_number: int = 0
+    raw_line: str = ""
+
+
+@dataclass 
+class ParseSummary:
+    """Summary of parsing results including error reporting."""
+    total_lines: int = 0
+    parsed_events: int = 0
+    malformed_lines: int = 0
+    malformed_samples: List[str] = None
+    connections: int = 0
+    disconnections: int = 0
+    combat_events: int = 0
+    deaths: int = 0
+    building_events: int = 0
+    emotes: int = 0
+    teleported_events: int = 0
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.malformed_samples is None:
+            self.malformed_samples = []
+
+
+class DayZADMParser:
+    """
+    Parser that yields events from DayZ AdminLog files.
+    
+    Separates parsing concerns from analysis, providing a clean interface
+    for consuming events and collecting parse error statistics.
+    """
+    
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
+        """Initialize the parser with configuration."""
+        self.config = config or {}
+        self._setup_patterns()
+    
+    def _setup_patterns(self):
+        """Setup regex patterns for parsing different event types."""
+        # Pre-compiled regex patterns for performance
+        # Patterns are grouped and commented by event type for clarity
+        self.patterns = {
+            # --- Connection/Disconnection Events ---
+            'connection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*is connected'),
+            'disconnection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*has been disconnected'),
+
+            # --- Player State/Status Events ---
+            'unconscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*is unconscious'),
+            'conscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*regained consciousness'),
+            'suicide': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)(?:\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>)?\)\s*committed suicide'),
+            'emote': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*performed ([^\s]+)(?: with ([^\s]+))?'),
+
+            # --- Combat Events ---
+            'hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*\[HP: ([0-9.]+)\]\s*hit by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*into\s*([^(]+)\((\d+)\)\s*for\s*([0-9.]+) damage\s*\(([^)]+)\)(?:\s*with\s+([^\s]+)(?:\s+from\s+([0-9.]+)\s+meters)?)?'),
+            'kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*killed by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*with\s*([^\s]+)\s*from\s*([0-9.]+) meters'),
+            'env_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by ([^\s]+) with ([^\s]+)'),
+            'env_hit_simple': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\]\s*hit by ([^\s]+)$'),
+            'explosion_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by explosion \(([^)]+)\)'),
+            'death': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*died\. Stats> Water: ([0-9.]+) Energy: ([0-9.]+) Bleed sources: (\d+)'),
+            'death_other': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) killed by ([^\s]+)'),
+
+            # --- Building/Construction Events ---
+            'building': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*(Built|Dismantled) ([^\s]+) (on|from) ([^\s]+) with ([^\s]+)$'),
+            'packed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) packed (.+?) with ([^\s]+)$'),
+            'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
+            'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
+
+            # --- Teleportation Events ---
+            'teleported': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*was teleported from:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\s*to:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\.\s*Reason:\s*(.+)$'),
+
+            # --- Fallback/Player Position ---
+            # Match simple position lines that end after the position coordinates
+            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*$')
+        }
+
+        # --- Special/Other Events from config ---
+        special_events_cfg = self.config.get('special_events', {})
+        if special_events_cfg.get('enabled', False):
+            for event in special_events_cfg.get('events', []):
+                name = event.get('name')
+                regexp = event.get('regexp')
+                if name and regexp:
+                    try:
+                        self.patterns[name] = re.compile(rf'(\d{{2}}:\d{{2}}:\d{{2}})\s*\|\s*{regexp}')
+                    except Exception as e:
+                        logger.error(f"Failed to compile special event regexp for '{name}': {e}")
+    
+    def parse_file(self, log_file: str, max_malformed_samples: int = 10) -> tuple[List[PlayerEvent], List[CombatEvent], ParseSummary]:
+        """
+        Parse an ADM log file and yield events.
+        
+        Args:
+            log_file: Path to the ADM log file
+            max_malformed_samples: Maximum number of malformed line samples to collect
+            
+        Returns:
+            Tuple of (events, combat_events, parse_summary)
+        """
+        events = []
+        combat_events = []
+        summary = ParseSummary()
+        
+        log_path = Path(log_file)
+        if not log_path.exists():
+            raise FileNotFoundError(f"Log file not found: {log_path}")
+        
+        logger.info(f"Parsing ADM log file: {log_path}")
+        
+        # Extract date from filename for timestamp parsing
+        base_date = self._extract_date_from_filename(str(log_path))
+        
+        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
+            for line_number, line in enumerate(f, 1):
+                summary.total_lines += 1
+                line = line.strip()
+                
+                if not line or line.startswith('#'):
+                    continue
+                
+                parse_result = self._parse_line(line, base_date, line_number)
+                
+                if parse_result.event:
+                    events.append(parse_result.event)
+                    summary.parsed_events += 1
+                    
+                    # Update event type counters
+                    event_type = parse_result.event.event_type
+                    if event_type == 'connection':
+                        summary.connections += 1
+                    elif event_type == 'disconnection':
+                        summary.disconnections += 1
+                    elif event_type in ['building', 'placed', 'folded', 'packed']:
+                        summary.building_events += 1
+                    elif event_type == 'emote':
+                        summary.emotes += 1
+                    elif event_type == 'teleported':
+                        summary.teleported_events += 1
+                    elif event_type == 'death':
+                        summary.deaths += 1
+                    
+                    # Handle combat events
+                    if hasattr(parse_result.event.details, 'get') and parse_result.event.details.get('combat_event'):
+                        combat_events.append(parse_result.event.details['combat_event'])
+                        summary.combat_events += 1
+                    
+                    # Update timestamps
+                    timestamp = parse_result.event.timestamp
+                    if summary.start_time is None or timestamp < summary.start_time:
+                        summary.start_time = timestamp
+                    if summary.end_time is None or timestamp > summary.end_time:
+                        summary.end_time = timestamp
+                        
+                elif parse_result.error:
+                    summary.malformed_lines += 1
+                    if len(summary.malformed_samples) < max_malformed_samples:
+                        sample = f"Line {line_number}: {parse_result.raw_line[:100]}{'...' if len(parse_result.raw_line) > 100 else ''}"
+                        summary.malformed_samples.append(sample)
+        
+        logger.info(f"Parsed {summary.parsed_events} events from {summary.total_lines} lines")
+        if summary.malformed_lines > 0:
+            logger.warning(f"Found {summary.malformed_lines} malformed lines")
+        
+        return events, combat_events, summary
+    
+    def _extract_date_from_filename(self, filename: str) -> datetime:
+        """Extract date from log filename, fallback to current date."""
+        try:
+            # Try to extract date from filename like "ADM-2023-01-15.log"
+            import re
+            match = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
+            if match:
+                year, month, day = match.groups()
+                return datetime(int(year), int(month), int(day))
+        except Exception as e:
+            logger.debug(f"Could not extract date from filename '{filename}': {e}")
+        
+        # Fallback to current date
+        return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    
+    def _parse_line(self, line: str, base_date: datetime, line_number: int) -> ParseResult:
+        """Parse a single log line into a ParseResult."""
+        logger.debug(f"PARSING LINE {line_number}: {line}")
+        
+        for event_type, pattern in self.patterns.items():
+            try:
+                match = pattern.match(line)
+                if match:
+                    logger.debug(f"MATCHED EVENT TYPE: {event_type}")
+                    event = self._create_event_from_match(event_type, match, base_date, line)
+                    if event:
+                        return ParseResult(event=event, line_number=line_number, raw_line=line)
+                    else:
+                        return ParseResult(
+                            error=f"Failed to create event from match for type {event_type}",
+                            line_number=line_number,
+                            raw_line=line
+                        )
+            except Exception as e:
+                logger.debug(f"Error matching pattern {event_type}: {e}")
+                continue
+        
+        logger.debug(f"NO PATTERN MATCHED FOR LINE {line_number}")
+        return ParseResult(
+            error="No pattern matched",
+            line_number=line_number,
+            raw_line=line
+        )
+    
+    # Move all the helper methods from DayZADMAnalyzer here...
+    # (I'll implement the key ones to keep this manageable)
+    
+    def _safe_group_access(self, groups: tuple, index: int, default: str = "Unknown") -> str:
+        """Safely access regex group by index, returning default if index out of range or None."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return groups[index]
+            return default
+        except (IndexError, TypeError):
+            return default
+    
+    def _safe_group_float(self, groups: tuple, index: int, default: float = 0.0) -> float:
+        """Safely access regex group as float, returning default if index out of range, None, or conversion fails."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return float(groups[index])
+            return default
+        except (IndexError, TypeError, ValueError):
+            return default
+    
+    def _safe_group_int(self, groups: tuple, index: int, default: int = 0) -> int:
+        """Safely access regex group as int, returning default if index out of range, None, or conversion fails."""
+        try:
+            if index < len(groups) and groups[index] is not None:
+                return int(groups[index])
+            return default
+        except (IndexError, TypeError, ValueError):
+            return default
+
+    def _safe_position_extract(self, groups: tuple, x_index: int, y_index: int, z_index: int) -> Optional[Tuple[float, float, float]]:
+        """Safely extract position coordinates from regex groups."""
+        try:
+            if (x_index < len(groups) and y_index < len(groups) and z_index < len(groups) and
+                groups[x_index] is not None and groups[y_index] is not None and groups[z_index] is not None):
+                return (float(groups[x_index]), float(groups[y_index]), float(groups[z_index]))
+            return None
+        except (IndexError, TypeError, ValueError):
+            return None
+    
+    def _create_timestamp(self, time_str: str, base_date: datetime) -> datetime:
+        """Create a timestamp from time string and base date, handling day rollover correctly."""
+        try:
+            time_parts = time_str.split(':')
+            timestamp = base_date.replace(
+                hour=int(time_parts[0]),
+                minute=int(time_parts[1]),
+                second=int(time_parts[2])
+            )
+            
+            # Handle day rollover (if timestamp is more than 12 hours behind base_date, assume next day)
+            if (base_date - timestamp).total_seconds() > 43200:  # 12 hours
+                timestamp += timedelta(days=1)
+                
+            return timestamp
+        except Exception as e:
+            logger.error(f"Error creating timestamp from '{time_str}': {e}")
+            return base_date
+    
+    def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> Optional[PlayerEvent]:
+        """Create a PlayerEvent from a regex match - includes combat event creation."""
+        try:
+            groups = match.groups()
+            time_str = self._safe_group_access(groups, 0, "00:00:00")
+            details = {'raw_line': line}
+            
+            # Parse timestamp using helper method
+            timestamp = self._create_timestamp(time_str, base_date)
+            
+            # Handle different event types
+            if event_type in ['connection', 'disconnection']:
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = None
+            elif event_type == 'player_position':
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = self._safe_position_extract(groups, 3, 4, 5)
+            elif event_type == 'hit':
+                # Combat event - create CombatEvent in details ONLY for player vs player combat
+                victim_name = self._safe_group_access(groups, 1)
+                victim_id = self._safe_group_access(groups, 2)
+                victim_pos = self._safe_position_extract(groups, 3, 4, 5)
+                victim_hp = self._safe_group_float(groups, 6)
+                
+                attacker_name = self._safe_group_access(groups, 7)
+                attacker_id = self._safe_group_access(groups, 8)
+                attacker_pos = self._safe_position_extract(groups, 9, 10, 11)
+                
+                hit_location = self._safe_group_access(groups, 12).strip()
+                damage = self._safe_group_float(groups, 14)  # Use damage from "for X damage" part
+                
+                # Weapon assignment: prefer group 16 (weapon), fallback to group 15 (ammo), then default
+                if len(groups) > 16 and groups[16] is not None:
+                    weapon = self._safe_group_access(groups, 16).strip()
+                elif len(groups) > 15 and groups[15] is not None:
+                    weapon = self._safe_group_access(groups, 15).strip()
+                else:
+                    weapon = "Unknown"
+                    
+                distance = self._safe_group_float(groups, 17)
+                
+                # Check if this is a kill (victim has DEAD in original line or HP is 0)
+                is_kill = victim_hp == 0.0 or "(DEAD)" in line
+                
+                # Only create combat event for player vs player combat
+                # Check that attacker_name is not empty and doesn't contain generic identifiers
+                if (attacker_name and attacker_name != "Unknown" and 
+                    not attacker_name.startswith("Environment") and
+                    not attacker_name.startswith("Explosion") and
+                    victim_name and victim_name != "Unknown"):
+                    
+                    combat_event = CombatEvent(
+                        timestamp=timestamp,
+                        attacker_name=attacker_name,
+                        attacker_id=attacker_id,
+                        victim_name=victim_name,
+                        victim_id=victim_id,
+                        weapon=weapon,
+                        damage=damage,
+                        hit_location=hit_location,
+                        distance=distance,
+                        attacker_pos=attacker_pos,
+                        victim_pos=victim_pos,
+                        kill=is_kill
+                    )
+                    
+                    details['combat_event'] = combat_event
+                
+                player_name = victim_name
+                player_id = victim_id
+                position = victim_pos
+                
+            elif event_type == 'kill':
+                # Kill event - we already handle kills in hit events, so just track as regular event
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = self._safe_position_extract(groups, 3, 4, 5)
+                # No combat_event created for kill events - already handled in hit events
+                
+                
+            elif event_type in ['env_hit', 'env_hit_simple']:
+                # Environmental hit - do NOT create combat event for these
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = self._safe_position_extract(groups, 3, 4, 5)
+                # No combat_event created for environmental damage
+                
+            elif event_type == 'explosion_hit':
+                # Explosion hit - do NOT create combat event for these unless from player weapons
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = self._safe_position_extract(groups, 3, 4, 5)
+                # No combat_event created for explosion damage
+                
+            else:
+                # Generic parsing for other event types
+                player_name = self._safe_group_access(groups, 1)
+                player_id = self._safe_group_access(groups, 2)
+                position = self._safe_position_extract(groups, 3, 4, 5) if len(groups) > 5 else None
+                details['groups'] = groups  # Store for detailed analysis later
+            
+            return PlayerEvent(
+                timestamp=timestamp,
+                player_name=player_name,
+                player_id=player_id,
+                event_type=event_type,
+                position=position,
+                details=details
+            )
+        except Exception as e:
+            logger.error(f"Error creating event from match for type {event_type}: {e}")
+            return None
+
+
 class DayZADMAnalyzer(FileBasedTool):
     """
     Analyzes DayZ AdminLog (ADM) files to extract player behavior statistics.
@@ -123,56 +513,12 @@ class DayZADMAnalyzer(FileBasedTool):
         self._combat_events_by_victim: Optional[Dict[str, List[CombatEvent]]] = None
         self._player_id_to_name: Optional[Dict[str, str]] = None
         self._cache_dirty: bool = True
-
-        # Use self.log_dir from base class for log directory
-
-        # Pre-compiled regex patterns for performance
-        # Patterns are grouped and commented by event type for clarity
-        self.patterns = {
-            # --- Connection/Disconnection Events ---
-            'connection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*is connected'),
-            'disconnection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*has been disconnected'),
-
-            # --- Player State/Status Events ---
-            'unconscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*is unconscious'),
-            'conscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*regained consciousness'),
-            'suicide': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)(?:\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>)?\)\s*committed suicide'),
-            'emote': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*performed ([^\s]+)(?: with ([^\s]+))?'),
-
-            # --- Combat Events ---
-            'hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*\[HP: ([0-9.]+)\]\s*hit by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*into\s*([^(]+)\((\d+)\)\s*for\s*([0-9.]+) damage\s*\(([^)]+)\)(?: with ([^\)]+) from ([0-9.]+) meters)?'),
-            'kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*killed by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*with\s*([^"]+?)\s*from\s*([0-9.]+) meters'),
-            'env_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by ([^\s]+) with ([^\s]+)'),
-            'env_hit_simple': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\]\s*hit by ([^\s]+)$'),
-            'explosion_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by explosion \(([^)]+)\)'),
-            'death': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*died\. Stats> Water: ([0-9.]+) Energy: ([0-9.]+) Bleed sources: (\d+)'),
-            'death_other': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) killed by ([^\s]+)'),
-
-            # --- Building/Construction Events ---
-            'building': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*(Built|Dismantled) ([^\s]+) (on|from) ([^\s]+) with ([^\s]+)$'),
-            'packed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) packed (.+?) with ([^\s]+)$'),
-            'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
-            'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
-
-            # --- Teleportation Events ---
-            'teleported': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*was teleported from:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\s*to:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\.\s*Reason:\s*(.+)$'),
-
-            # --- Fallback/Player Position ---
-            # Match simple position lines that end after the position coordinates
-            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*$')
-        }
-
-        # --- Special/Other Events from config ---
-        special_events_cfg = (self.config or {}).get('special_events', {})
-        if special_events_cfg.get('enabled', False):
-            for event in special_events_cfg.get('events', []):
-                name = event.get('name')
-                regexp = event.get('regexp')
-                if name and regexp:
-                    try:
-                        self.patterns[name] = re.compile(rf'(\d{{2}}:\d{{2}}:\d{{2}})\s*\|\s*{regexp}')
-                    except Exception as e:
-                        logger.error(f"Failed to compile special event regexp for '{name}': {e}")
+        
+        # Parser for handling log file parsing
+        self.parser = DayZADMParser(config)
+        
+        # Parse error tracking
+        self.parse_summary: Optional[ParseSummary] = None
         
     def _invalidate_cache(self):
         """Invalidate cached derived maps when data changes."""
@@ -235,7 +581,7 @@ class DayZADMAnalyzer(FileBasedTool):
         
     def parse_log_file(self, log_file: str) -> Dict[str, Any]:
         """
-        Parse a DayZ ADM log file.
+        Parse a DayZ ADM log file using the decoupled parser.
         
         Args:
             log_file: Path to the ADM log file
@@ -244,78 +590,109 @@ class DayZADMAnalyzer(FileBasedTool):
             Dictionary containing parsing results and statistics
         """
         log_path = self.resolve_path(log_file)
-        
-        if not Path(log_path).exists():
-            raise FileNotFoundError(f"Log file not found: {log_path}")
-        
         logger.info(f"Parsing ADM log file: {log_path}")
-
         
-        parse_stats = {
-            'total_lines': 0,
-            'parsed_events': 0,
-            'connections': 0,
-            'disconnections': 0,
-            'combat_events': 0,
-            'deaths': 0,
-            'building_events': 0,
-            'emotes': 0,
-            'teleported_events': 0,
-            'start_time': None,
-            'end_time': None
-        }
+        # Use the decoupled parser to get events and error statistics
+        events, combat_events, parse_summary = self.parser.parse_file(log_path)
         
-        # Extract date from filename for timestamp parsing
-        base_date = self._extract_date_from_filename(log_path)
+        # Store the parse summary for error reporting
+        self.parse_summary = parse_summary
         
-        with open(log_path, 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                parse_stats['total_lines'] += 1
-                line = line.strip()
-                if not line or line.startswith('#'):
-                    continue
-                # Try to parse the line with different patterns
-                event = self._parse_line(line, base_date)
-                if event:
-                    self.events.append(event)
-                    self._invalidate_cache()  # Invalidate cache when data changes
-                    parse_stats['parsed_events'] += 1
-                    # Update timestamps
-                    if parse_stats['start_time'] is None or event.timestamp < parse_stats['start_time']:
-                        parse_stats['start_time'] = event.timestamp
-                    if parse_stats['end_time'] is None or event.timestamp > parse_stats['end_time']:
-                        parse_stats['end_time'] = event.timestamp
-                    # Update specific event counters
-                    if event.event_type == 'connection':
-                        parse_stats['connections'] += 1
-                        self._handle_connection(event)
-                    elif event.event_type == 'disconnection':
-                        parse_stats['disconnections'] += 1
-                        self._handle_disconnection(event)
-                    elif event.event_type in ['hit', 'kill']:
-                        parse_stats['combat_events'] += 1
-                    elif event.event_type == 'death':
-                        parse_stats['deaths'] += 1
-                    elif event.event_type == 'building':
-                        parse_stats['building_events'] += 1
-                    elif event.event_type == 'emote':
-                        parse_stats['emotes'] += 1
-                    elif event.event_type == 'teleported':
-                        parse_stats['teleported_events'] += 1
-                    # Handle position tracking for active sessions
-                    if event.position and event.player_id in self.current_sessions:
-                        session = self.current_sessions[event.player_id]
-                        session.positions.append((event.timestamp, *event.position))
+        # Process events through the analyzer
+        for event in events:
+            self.events.append(event)
+            
+            # Handle specific event types for session management
+            if event.event_type == 'connection':
+                self._handle_connection(event)
+            elif event.event_type == 'disconnection':
+                self._handle_disconnection(event)
+            
+            # Handle position tracking for active sessions
+            if event.position and event.player_id in self.current_sessions:
+                session = self.current_sessions[event.player_id]
+                session.positions.append((event.timestamp, *event.position))
+        
+        # Store combat events
+        self.combat_events.extend(combat_events)
+        
+        # Invalidate cache after all events are processed
+        self._invalidate_cache()
                         
         # Close any remaining open sessions
         for session in self.current_sessions.values():
             if session.disconnect_time is None:
-                session.disconnect_time = parse_stats['end_time']
+                session.disconnect_time = parse_summary.end_time
             self.player_sessions[session.player_id].append(session)
         self.current_sessions.clear()
         
+        # Convert parse summary to legacy format for compatibility
+        parse_stats = {
+            'total_lines': parse_summary.total_lines,
+            'parsed_events': parse_summary.parsed_events,
+            'malformed_lines': parse_summary.malformed_lines,
+            'malformed_samples': parse_summary.malformed_samples,
+            'connections': parse_summary.connections,
+            'disconnections': parse_summary.disconnections,
+            'combat_events': parse_summary.combat_events,
+            'deaths': parse_summary.deaths,
+            'building_events': parse_summary.building_events,
+            'emotes': parse_summary.emotes,
+            'teleported_events': parse_summary.teleported_events,
+            'start_time': parse_summary.start_time,
+            'end_time': parse_summary.end_time
+        }
+        
         logger.info(f"Parsed {parse_stats['parsed_events']} events from {parse_stats['total_lines']} lines")
+        if parse_stats['malformed_lines'] > 0:
+            logger.warning(f"Found {parse_stats['malformed_lines']} malformed lines")
+            
         return parse_stats
+    
+    def get_parse_error_report(self) -> Dict[str, Any]:
+        """
+        Get detailed error report from the last parsing operation for data quality assessment.
+        
+        This method provides comprehensive error statistics including malformed line counts,
+        sample problematic lines, and error rates. Essential for production log analysis
+        where data quality matters.
+        
+        Returns:
+            Dictionary containing:
+            - malformed_lines: Number of lines that couldn't be parsed
+            - malformed_samples: List of sample malformed lines (up to configured limit)
+            - error_rate: Percentage of malformed lines
+            - total_lines: Total lines processed
+            - parsed_events: Successfully parsed events
+            
+        Example:
+            analyzer = DayZADMAnalyzer()
+            analyzer.parse_log_file("server.adm")
+            error_report = analyzer.get_parse_error_report()
+            
+            if error_report['error_rate'] > 5.0:
+                logger.warning(f"High error rate: {error_report['error_rate']:.2f}%")
+                for sample in error_report['malformed_samples']:
+                    logger.warning(f"Malformed line: {sample}")
+        """
+        if not self.parse_summary:
+            return {
+                'malformed_lines': 0,
+                'malformed_samples': [],
+                'error_rate': 0.0
+            }
+        
+        error_rate = 0.0
+        if self.parse_summary.total_lines > 0:
+            error_rate = (self.parse_summary.malformed_lines / self.parse_summary.total_lines) * 100
+        
+        return {
+            'malformed_lines': self.parse_summary.malformed_lines,
+            'malformed_samples': self.parse_summary.malformed_samples,
+            'error_rate': error_rate,
+            'total_lines': self.parse_summary.total_lines,
+            'parsed_events': self.parse_summary.parsed_events
+        }
         
     def _extract_date_from_filename(self, filepath: str) -> datetime:
         """Extract date from ADM log filename."""
@@ -490,8 +867,8 @@ class DayZADMAnalyzer(FileBasedTool):
             hit_location = self._safe_group_access(groups, 12, "unknown").strip()
             # DEBUG: log all groups for hit event
             logger.debug(f"HIT GROUPS: {groups}")
-            damage = self._safe_group_float(groups, 13)
-            ammo = self._safe_group_access(groups, 14)
+            damage = self._safe_group_float(groups, 14)  # Use damage from "for X damage" part
+            ammo = self._safe_group_access(groups, 15)
             
             # Robustly assign weapon and distance for all cases
             weapon = None
@@ -1263,17 +1640,26 @@ class DayZADMAnalyzer(FileBasedTool):
         player_stats = self.generate_player_statistics()
         combat_stats = self.generate_combat_statistics()
         anomalies = self.detect_anomalies()
+        
+        # Get error reporting for data quality assessment
+        error_report = self.get_parse_error_report()
+        
         results = {
             'parse_statistics': parse_stats,
             'player_statistics': player_stats,
             'combat_statistics': combat_stats,
             'anomalies': anomalies,
+            'error_report': error_report,
             'summary': {
                 'analysis_timestamp': datetime.now().isoformat(),
                 'log_file': log_file,
                 'total_events_parsed': len(self.events),
                 'unique_players': len(self.player_sessions),
                 'total_combat_events': len(self.combat_events),
+                'data_quality': {
+                    'error_rate': error_report['error_rate'],
+                    'malformed_lines': error_report['malformed_lines']
+                },
                 'analysis_time_range': {
                     'start': parse_stats['start_time'].isoformat() if parse_stats['start_time'] else None,
                     'end': parse_stats['end_time'].isoformat() if parse_stats['end_time'] else None
