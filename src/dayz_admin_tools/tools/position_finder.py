@@ -249,13 +249,14 @@ class PositionFinder(FileBasedTool):
         """
         return bool(self._regex_detector.search(pattern))
 
-    def find_positions_by_player(self, file_pattern: Optional[str] = None, player_name_filter: str = "") -> List[tuple]:
+    def find_positions_by_player(self, file_pattern: Optional[str] = None, player_name_filter: str = "", placement_filter: Optional[str] = None) -> List[tuple]:
         """
         Find positions and actions for a specific player in multiple files
         
         Args:
             file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
             player_name_filter: Player name to filter by (automatically detects regex patterns)
+            placement_filter: Filter for placement actions (e.g., "placed", "Fireplace", "Wooden Crate")
         
         Returns:
             List of tuples containing file details and player actions
@@ -275,21 +276,78 @@ class PositionFinder(FileBasedTool):
             self._player_regex = None
             logger.info(f"Using substring search for player: {player_name_filter}")
 
+        # Handle placement filter
+        placement_regex = None
+        use_placement_regex = False
+        if placement_filter:
+            use_placement_regex = self._is_regex_pattern(placement_filter)
+            if use_placement_regex:
+                try:
+                    placement_regex = re.compile(placement_filter, re.IGNORECASE)
+                    logger.info(f"Auto-detected regex pattern for placement search: {placement_filter}")
+                except re.error as e:
+                    logger.error(f"Invalid regex pattern '{placement_filter}': {e}")
+                    return []
+            else:
+                logger.info(f"Using substring search for placement: {placement_filter}")
+
         def process_player_line(filename, line_num, file_date, time_str, player_name, coords, action):
             """Process line for player search"""
-            if player_name:
+            # Check player name filter
+            player_match = True
+            if player_name_filter and player_name:
                 if use_regex and self._player_regex:
-                    if self._player_regex.search(player_name):
-                        return (filename, line_num, file_date, time_str, player_name, coords, action)
-                elif not use_regex and player_name_filter.lower() in player_name.lower():
-                    return (filename, line_num, file_date, time_str, player_name, coords, action)
+                    player_match = bool(self._player_regex.search(player_name))
+                elif not use_regex:
+                    player_match = player_name_filter.lower() in player_name.lower()
+                else:
+                    player_match = False
+            elif player_name_filter:
+                player_match = False
+            
+            # Check placement filter
+            placement_match = True
+            if placement_filter and action:
+                if use_placement_regex and placement_regex:
+                    placement_match = bool(placement_regex.search(action))
+                elif not use_placement_regex:
+                    placement_match = placement_filter.lower() in action.lower()
+                else:
+                    placement_match = False
+            elif placement_filter:
+                placement_match = False
+            
+            if player_match and placement_match:
+                return (filename, line_num, file_date, time_str, player_name, coords, action)
             return None
+        
+        search_description = []
+        if player_name_filter:
+            search_description.append(f"player: {player_name_filter} {'(auto-detected regex)' if use_regex else '(substring)'}")
+        if placement_filter:
+            search_description.append(f"placement: {placement_filter} {'(auto-detected regex)' if use_placement_regex else '(substring)'}")
+        
+        description = " and ".join(search_description) if search_description else "all actions"
         
         return self._process_files(
             file_pattern,
             process_player_line,
-            f"player: {player_name_filter} {'(auto-detected regex)' if use_regex else '(substring)'}"
+            description
         )
+
+    def find_placement_actions(self, file_pattern: Optional[str] = None, player_name_filter: str = "", placement_filter: str = "placed") -> List[tuple]:
+        """
+        Find placement actions in multiple files
+        
+        Args:
+            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
+            player_name_filter: Player name to filter by (automatically detects regex patterns)
+            placement_filter: Filter for placement actions (default: "placed")
+        
+        Returns:
+            List of tuples containing file details and placement actions
+        """
+        return self.find_positions_by_player(file_pattern, player_name_filter, placement_filter)
 
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
         """
@@ -447,22 +505,37 @@ class PositionFinder(FileBasedTool):
         # Build output file path
         output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
         
-        if args.player:
+        if args.player or args.placement:
             if args.target_x is not None or args.target_y is not None:
-                logger.warning("Target coordinates are ignored when searching by player name")
+                logger.warning("Target coordinates are ignored when searching by player name or placement actions")
+            
+            # Determine search parameters
+            player_filter = args.player if args.player else ""
+            placement_filter = args.placement if args.placement else None
+            
+            # If only placement is specified, search all players for that placement
+            if args.placement and not args.player:
+                results = self.find_placement_actions(args.file_pattern, "", args.placement)
+                search_type = f"placement actions: {args.placement}"
+            # If both player and placement are specified, or only player
+            else:
+                results = self.find_positions_by_player(args.file_pattern, player_filter, placement_filter)
+                if placement_filter:
+                    search_type = f"player: {player_filter} with placement: {placement_filter}"
+                else:
+                    search_type = f"player: {player_filter}"
                 
-            results = self.find_positions_by_player(args.file_pattern, args.player)
             if not results:
-                logger.info(f"No positions found for player: {args.player}.")
+                logger.info(f"No positions found for {search_type}.")
                 return
                 
             results = self._filter_by_date_range(results, args.start_date, args.end_date)
             results = self._sort_by_time(results)
             self._save_player_positions_to_csv(results, output_file)
-            logger.info(f"Found {len(results)} positions for player: {args.player}.")
+            logger.info(f"Found {len(results)} positions for {search_type}.")
         else:
             if args.target_x is None or args.target_y is None:
-                logger.error("Target coordinates (--target-x and --target-y) are required when not searching by player name.")
+                logger.error("Either specify --player and/or --placement for player/action search, or provide target coordinates (--target-x and --target-y) for location-based search.")
                 return
                 
             results = self.find_nearby_positions(args.file_pattern, args.target_x, args.target_y, args.radius)
@@ -493,6 +566,18 @@ Examples:
   # Find positions for a specific player (substring search)
   dayz-position-finder --player "SurvivorName"
   
+  # Find all placement actions by any player
+  dayz-position-finder --placement "placed"
+  
+  # Find specific item placements (e.g., Fireplace)
+  dayz-position-finder --placement "Fireplace"
+  
+  # Find placement actions by a specific player
+  dayz-position-finder --player "LinThoDan" --placement "placed"
+  
+  # Find specific item placements by a specific player
+  dayz-position-finder --player "SpeckSepp" --placement "Wooden Crate"
+  
   # Find positions using regex pattern (auto-detected)
   dayz-position-finder --player "Survivor.*"
   
@@ -501,6 +586,9 @@ Examples:
   
   # Advanced regex patterns (auto-detected)
   dayz-position-finder --player "^Player[0-9]+$"
+  
+  # Regex for placement filtering (auto-detected)
+  dayz-position-finder --placement "(Fireplace|Wooden Crate|Tent)"
   
   # Filter by date range and use specific output file
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
@@ -515,6 +603,7 @@ Examples:
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
     parser.add_argument('--output', default='positions.csv', help='Output CSV file name (default: positions.csv)')
     parser.add_argument('--player', help='Player name to filter by (regex patterns are auto-detected)')
+    parser.add_argument('--placement', help='Filter for placement actions (e.g., "placed", "Fireplace", "Wooden Crate"). Can be used alone or with --player')
     parser.add_argument('--start-date', help='Start date in D.M.YYYY format (e.g., 01.06.2023)')
     parser.add_argument('--end-date', help='End date in D.M.YYYY format (e.g., 30.06.2023)')
     
