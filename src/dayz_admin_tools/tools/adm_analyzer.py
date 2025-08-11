@@ -140,40 +140,40 @@ class DayZADMParser:
     
     def _setup_patterns(self):
         """Setup regex patterns for parsing different event types."""
-        # Pre-compiled regex patterns for performance
+        # Pre-compiled regex patterns for performance using named capture groups
         # Patterns are grouped and commented by event type for clarity
         self.patterns = {
             # --- Connection/Disconnection Events ---
-            'connection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*is connected'),
-            'disconnection': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\)\s*has been disconnected'),
+            'connection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*is connected'),
+            'disconnection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*has been disconnected'),
 
             # --- Player State/Status Events ---
-            'unconscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*is unconscious'),
-            'conscious': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*regained consciousness'),
-            'suicide': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)(?:\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>)?\)\s*committed suicide'),
-            'emote': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*performed ([^\s]+)(?: with ([^\s]+))?'),
+            'unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is unconscious'),
+            'conscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*regained consciousness'),
+            'suicide': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)(?:\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>)?\)\s*committed suicide'),
+            'emote': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*performed (?P<emote>[^\s]+)(?:\s+with\s+(?P<emote_item>[^\s]+))?'),
 
             # --- Combat Events ---
-            'hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*\[HP: ([0-9.]+)\]\s*hit by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*into\s*([^(]+)\((\d+)\)\s*for\s*([0-9.]+) damage\s*\(([^)]+)\)(?:\s*with\s+([^\s]+)(?:\s+from\s+([0-9.]+)\s+meters)?)?'),
-            'kill': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*killed by Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*with\s*([^\s]+)\s*from\s*([0-9.]+) meters'),
-            'env_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by ([^\s]+) with ([^\s]+)'),
-            'env_hit_simple': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\]\s*hit by ([^\s]+)$'),
-            'explosion_hit': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\[HP: ([0-9.]+)\] hit by explosion \(([^)]+)\)'),
-            'death': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*died\. Stats> Water: ([0-9.]+) Energy: ([0-9.]+) Bleed sources: (\d+)'),
-            'death_other': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(DEAD\)\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) killed by ([^\s]+)'),
+            'hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<victim_id>[A-F0-9]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*\[HP:\s*(?P<victim_hp>[0-9.]+)\]\s*hit by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-F0-9]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*into\s*(?P<hit_location>[^(]+)\((?P<hit_location_id>\d+)\)\s*for\s*(?P<damage>[0-9.]+)\s+damage\s*\((?P<ammo>[^)]+)\)(?:\s*with\s+(?P<weapon>[^\s]+)(?:\s+from\s+(?P<distance>[0-9.]+)\s+meters)?)?'),
+            'kill': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<victim_id>[A-F0-9]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*killed by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-F0-9]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*with\s*(?P<weapon>[^\s]+)\s*from\s*(?P<distance>[0-9.]+)\s+meters'),
+            'env_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by\s+(?P<attacker>[^\s]+)\s+with\s+(?P<weapon>[^\s]+)'),
+            'env_hit_simple': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+(?P<attacker>[^\s]+)$'),
+            'explosion_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by explosion\s+\((?P<explosion_type>[^)]+)\)'),
+            'death': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*died\.\s+Stats>\s+Water:\s+(?P<water>[0-9.]+)\s+Energy:\s+(?P<energy>[0-9.]+)\s+Bleed sources:\s+(?P<bleed_sources>\d+)'),
+            'death_other': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+killed by\s+(?P<killer>[^\s]+)'),
 
             # --- Building/Construction Events ---
-            'building': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*(Built|Dismantled) ([^\s]+) (on|from) ([^\s]+) with ([^\s]+)$'),
-            'packed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) packed (.+?) with ([^\s]+)$'),
-            'placed': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) placed (.+)$'),
-            'folded': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\) folded (.+)$'),
+            'building': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>Built|Dismantled)\s+(?P<structure>[^\s]+)\s+(?P<on_or_from>on|from)\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
+            'packed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+packed\s+(?P<structure>.+?)\s+with\s+(?P<tool>[^\s]+)$'),
+            'placed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+placed\s+(?P<structure>.+)$'),
+            'folded': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+folded\s+(?P<structure>.+)$'),
 
             # --- Teleportation Events ---
-            'teleported': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*was teleported from:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\s*to:\s*<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\.\s*Reason:\s*(.+)$'),
+            'teleported': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*was teleported from:\s*<(?P<from_x>[0-9.-]+),\s*(?P<from_y>[0-9.-]+),\s*(?P<from_z>[0-9.-]+)>\s*to:\s*<(?P<to_x>[0-9.-]+),\s*(?P<to_y>[0-9.-]+),\s*(?P<to_z>[0-9.-]+)>\.\s*Reason:\s*(?P<reason>.+)$'),
 
             # --- Fallback/Player Position ---
             # Match simple position lines that end after the position coordinates
-            'player_position': re.compile(r'(\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"([^"]+?)"\s*\(id=([A-F0-9]+)\s*pos=<([0-9.-]+),\s*([0-9.-]+),\s*([0-9.-]+)>\)\s*$')
+            'player_position': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*$')
         }
 
         # --- Special/Other Events from config ---
@@ -184,7 +184,7 @@ class DayZADMParser:
                 regexp = event.get('regexp')
                 if name and regexp:
                     try:
-                        self.patterns[name] = re.compile(rf'(\d{{2}}:\d{{2}}:\d{{2}})\s*\|\s*{regexp}')
+                        self.patterns[name] = re.compile(rf'(?P<time>\d{{2}}:\d{{2}}:\d{{2}})\s*\|\s*{regexp}')
                     except Exception as e:
                         logger.error(f"Failed to compile special event regexp for '{name}': {e}")
     
@@ -348,6 +348,53 @@ class DayZADMParser:
             return None
         except (IndexError, TypeError, ValueError):
             return None
+
+    # Named group access methods for improved readability
+    def _safe_named_group_access(self, match, group_name: str, default: str = "Unknown") -> str:
+        """Safely access regex named group, returning default if group doesn't exist or is None."""
+        try:
+            value = match.group(group_name)
+            if value is not None:
+                return value.strip()
+            else:
+                return default
+        except (IndexError, TypeError, AttributeError):
+            return default
+    
+    def _safe_named_group_float(self, match, group_name: str, default: float = 0.0) -> float:
+        """Safely access regex named group as float, returning default if group doesn't exist, is None, or conversion fails."""
+        try:
+            value = match.group(group_name)
+            if value is not None:
+                return float(value)
+            else:
+                return default
+        except (IndexError, TypeError, ValueError, AttributeError):
+            return default
+    
+    def _safe_named_group_int(self, match, group_name: str, default: int = 0) -> int:
+        """Safely access regex named group as int, returning default if group doesn't exist, is None, or conversion fails."""
+        try:
+            value = match.group(group_name)
+            if value is not None:
+                return int(value)
+            else:
+                return default
+        except (IndexError, TypeError, ValueError, AttributeError):
+            return default
+
+    def _safe_position_extract_named(self, match, x_name: str, y_name: str, z_name: str) -> Optional[Tuple[float, float, float]]:
+        """Safely extract position coordinates from regex named groups."""
+        try:
+            x = match.group(x_name)
+            y = match.group(y_name)
+            z = match.group(z_name)
+            if x is not None and y is not None and z is not None:
+                return (float(x), float(y), float(z))
+            else:
+                return None
+        except (IndexError, TypeError, ValueError, AttributeError):
+            return None
     
     def _create_timestamp(self, time_str: str, base_date: datetime) -> datetime:
         """Create a timestamp from time string and base date, handling day rollover correctly."""
@@ -371,45 +418,61 @@ class DayZADMParser:
     def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> Optional[PlayerEvent]:
         """Create a PlayerEvent from a regex match - includes combat event creation."""
         try:
-            groups = match.groups()
-            time_str = self._safe_group_access(groups, 0, "00:00:00")
+            # Use named groups for better readability
+            time_str = self._safe_named_group_access(match, 'time', "00:00:00")
             details = {'raw_line': line}
             
             # Parse timestamp using helper method
             timestamp = self._create_timestamp(time_str, base_date)
             
-            # Handle different event types
+            # Handle different event types using named groups
             if event_type in ['connection', 'disconnection']:
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
                 position = None
+                
             elif event_type == 'player_position':
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
-                position = self._safe_position_extract(groups, 3, 4, 5)
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+            elif event_type in ['unconscious', 'conscious']:
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+            elif event_type == 'suicide':
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+            elif event_type == 'emote':
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                emote = self._safe_named_group_access(match, 'emote', '')
+                emote_item = self._safe_named_group_access(match, 'emote_item', '')
+                details.update({
+                    'emote': emote,
+                    'emote_item': emote_item
+                })
+                
             elif event_type == 'hit':
                 # Combat event - create CombatEvent in details ONLY for player vs player combat
-                victim_name = self._safe_group_access(groups, 1)
-                victim_id = self._safe_group_access(groups, 2)
-                victim_pos = self._safe_position_extract(groups, 3, 4, 5)
-                victim_hp = self._safe_group_float(groups, 6)
+                victim_name = self._safe_named_group_access(match, 'victim_name')
+                victim_id = self._safe_named_group_access(match, 'victim_id')
+                victim_pos = self._safe_position_extract_named(match, 'victim_x', 'victim_y', 'victim_z')
+                victim_hp = self._safe_named_group_float(match, 'victim_hp')
                 
-                attacker_name = self._safe_group_access(groups, 7)
-                attacker_id = self._safe_group_access(groups, 8)
-                attacker_pos = self._safe_position_extract(groups, 9, 10, 11)
+                attacker_name = self._safe_named_group_access(match, 'attacker_name')
+                attacker_id = self._safe_named_group_access(match, 'attacker_id')
+                attacker_pos = self._safe_position_extract_named(match, 'attacker_x', 'attacker_y', 'attacker_z')
                 
-                hit_location = self._safe_group_access(groups, 12).strip()
-                damage = self._safe_group_float(groups, 14)  # Use damage from "for X damage" part
-                
-                # Weapon assignment: prefer group 16 (weapon), fallback to group 15 (ammo), then default
-                if len(groups) > 16 and groups[16] is not None:
-                    weapon = self._safe_group_access(groups, 16).strip()
-                elif len(groups) > 15 and groups[15] is not None:
-                    weapon = self._safe_group_access(groups, 15).strip()
-                else:
-                    weapon = "Unknown"
-                    
-                distance = self._safe_group_float(groups, 17)
+                hit_location = self._safe_named_group_access(match, 'hit_location', 'unknown')
+                damage = self._safe_named_group_float(match, 'damage')
+                ammo = self._safe_named_group_access(match, 'ammo', '')
+                weapon = self._safe_named_group_access(match, 'weapon', 'Unknown')
+                distance = self._safe_named_group_float(match, 'distance')
                 
                 # Check if this is a kill (victim has DEAD in original line or HP is 0)
                 is_kill = victim_hp == 0.0 or "(DEAD)" in line
@@ -444,32 +507,111 @@ class DayZADMParser:
                 
             elif event_type == 'kill':
                 # Kill event - we already handle kills in hit events, so just track as regular event
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
-                position = self._safe_position_extract(groups, 3, 4, 5)
+                player_name = self._safe_named_group_access(match, 'victim_name')
+                player_id = self._safe_named_group_access(match, 'victim_id')
+                position = self._safe_position_extract_named(match, 'victim_x', 'victim_y', 'victim_z')
                 # No combat_event created for kill events - already handled in hit events
-                
                 
             elif event_type in ['env_hit', 'env_hit_simple']:
                 # Environmental hit - do NOT create combat event for these
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
-                position = self._safe_position_extract(groups, 3, 4, 5)
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
                 # No combat_event created for environmental damage
                 
             elif event_type == 'explosion_hit':
                 # Explosion hit - do NOT create combat event for these unless from player weapons
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
-                position = self._safe_position_extract(groups, 3, 4, 5)
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
                 # No combat_event created for explosion damage
                 
+            elif event_type in ['death', 'death_other']:
+                # Death events
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+                if event_type == 'death':
+                    # Additional stats for regular death
+                    water = self._safe_named_group_float(match, 'water')
+                    energy = self._safe_named_group_float(match, 'energy')
+                    bleed_sources = self._safe_named_group_int(match, 'bleed_sources')
+                    details.update({
+                        'water': water,
+                        'energy': energy,
+                        'bleed_sources': bleed_sources
+                    })
+                elif event_type == 'death_other':
+                    # Death by specific cause
+                    killer = self._safe_named_group_access(match, 'killer', 'Unknown')
+                    details['killer'] = killer
+                    
+            elif event_type in ['building', 'packed', 'placed', 'folded']:
+                # Building/construction events
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+                if event_type == 'building':
+                    action = self._safe_named_group_access(match, 'action', '')
+                    structure = self._safe_named_group_access(match, 'structure', '')
+                    tool = self._safe_named_group_access(match, 'tool', '')
+                    parent = self._safe_named_group_access(match, 'parent', '')
+                    details.update({
+                        'action': action,
+                        'structure': structure,
+                        'tool': tool,
+                        'parent': parent
+                    })
+                else:
+                    # packed, placed, folded
+                    structure = self._safe_named_group_access(match, 'structure', '')
+                    tool = self._safe_named_group_access(match, 'tool', '') if event_type == 'packed' else ''
+                    details.update({
+                        'action': event_type,
+                        'structure': structure,
+                        'tool': tool
+                    })
+                    
+            elif event_type == 'teleported':
+                # Teleportation event
+                player_name = self._safe_named_group_access(match, 'player_name')
+                player_id = self._safe_named_group_access(match, 'player_id')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+                
+                from_pos = self._safe_position_extract_named(match, 'from_x', 'from_y', 'from_z')
+                to_pos = self._safe_position_extract_named(match, 'to_x', 'to_y', 'to_z')
+                reason = self._safe_named_group_access(match, 'reason', '')
+                
+                # Calculate teleport distance safely
+                teleport_distance = 0.0
+                if from_pos and to_pos:
+                    teleport_distance = ((to_pos[0] - from_pos[0]) ** 2 + 
+                                       (to_pos[1] - from_pos[1]) ** 2 + 
+                                       (to_pos[2] - from_pos[2]) ** 2) ** 0.5
+                
+                # Extract restricted area name if present
+                restricted_area = None
+                if "Restricted Area:" in reason:
+                    try:
+                        restricted_area = reason.split("Restricted Area:")[1].strip()
+                    except:
+                        restricted_area = None
+                
+                details.update({
+                    'from_position': from_pos,
+                    'to_position': to_pos,
+                    'reason': reason,
+                    'restricted_area': restricted_area,
+                    'teleport_distance': teleport_distance
+                })
+                
             else:
-                # Generic parsing for other event types
-                player_name = self._safe_group_access(groups, 1)
-                player_id = self._safe_group_access(groups, 2)
-                position = self._safe_position_extract(groups, 3, 4, 5) if len(groups) > 5 else None
-                details['groups'] = groups  # Store for detailed analysis later
+                # Generic parsing for other event types (special events, etc.)
+                player_name = self._safe_named_group_access(match, 'player_name', 'Unknown')
+                player_id = self._safe_named_group_access(match, 'player_id', 'Unknown')
+                position = self._safe_position_extract_named(match, 'x', 'y', 'z')
             
             return PlayerEvent(
                 timestamp=timestamp,
@@ -736,43 +878,6 @@ class DayZADMAnalyzer(FileBasedTool):
             timestamp += timedelta(days=1)
             
         return timestamp
-
-    def _safe_group_access(self, groups: tuple, index: int, default: str = "Unknown") -> str:
-        """Safely access regex group by index, returning default if index out of range or None."""
-        try:
-            if index < len(groups) and groups[index] is not None:
-                return groups[index]
-            return default
-        except (IndexError, TypeError):
-            return default
-    
-    def _safe_group_float(self, groups: tuple, index: int, default: float = 0.0) -> float:
-        """Safely access regex group as float, returning default if index out of range, None, or conversion fails."""
-        try:
-            if index < len(groups) and groups[index] is not None:
-                return float(groups[index])
-            return default
-        except (IndexError, TypeError, ValueError):
-            return default
-    
-    def _safe_group_int(self, groups: tuple, index: int, default: int = 0) -> int:
-        """Safely access regex group as int, returning default if index out of range, None, or conversion fails."""
-        try:
-            if index < len(groups) and groups[index] is not None:
-                return int(groups[index])
-            return default
-        except (IndexError, TypeError, ValueError):
-            return default
-
-    def _safe_position_extract(self, groups: tuple, x_index: int, y_index: int, z_index: int) -> Optional[Tuple[float, float, float]]:
-        """Safely extract position coordinates from regex groups."""
-        try:
-            if (x_index < len(groups) and y_index < len(groups) and z_index < len(groups) and
-                groups[x_index] is not None and groups[y_index] is not None and groups[z_index] is not None):
-                return (float(groups[x_index]), float(groups[y_index]), float(groups[z_index]))
-            return None
-        except (IndexError, TypeError, ValueError):
-            return None
 
     def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> PlayerEvent:
         """Create a PlayerEvent from a regex match."""
