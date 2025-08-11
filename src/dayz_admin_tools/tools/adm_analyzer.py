@@ -276,6 +276,22 @@ class DayZADMAnalyzer(FileBasedTool):
         logger.debug("NO PATTERN MATCHED FOR LINE")
         return None
     
+    def _create_timestamp(self, time_str: str, base_date: datetime) -> datetime:
+        """Create a timestamp from time string and base date, handling day rollover correctly."""
+        time_parts = time_str.split(':')
+        timestamp = base_date.replace(
+            hour=int(time_parts[0]),
+            minute=int(time_parts[1]),
+            second=int(time_parts[2])
+        )
+        
+        # Handle day rollover - compare against base date (date only, not time)
+        base_date_only = base_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        if timestamp < base_date_only:
+            timestamp += timedelta(days=1)
+            
+        return timestamp
+
     def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> PlayerEvent:
         """Create a PlayerEvent from a regex match."""
         groups = match.groups()
@@ -297,11 +313,7 @@ class DayZADMAnalyzer(FileBasedTool):
             details.update({'event': event_type, 'raw_groups': groups})
             # Optionally, extract more details if the config provides a 'fields' list in the future
             return PlayerEvent(
-                timestamp=base_date.replace(
-                    hour=int(time_str.split(':')[0]),
-                    minute=int(time_str.split(':')[1]),
-                    second=int(time_str.split(':')[2])
-                ),
+                timestamp=self._create_timestamp(time_str, base_date),
                 player_name=player_name,
                 player_id=player_id,
                 event_type=event_type,
@@ -330,11 +342,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 })
                 # Return PlayerEvent immediately to avoid further processing and tuple index errors
                 return PlayerEvent(
-                    timestamp=base_date.replace(
-                        hour=int(time_str.split(':')[0]),
-                        minute=int(time_str.split(':')[1]),
-                        second=int(time_str.split(':')[2])
-                    ),
+                    timestamp=self._create_timestamp(time_str, base_date),
                     player_name=player_name,
                     player_id=player_id,
                     event_type='building',
@@ -346,17 +354,8 @@ class DayZADMAnalyzer(FileBasedTool):
                 return None
         # ...existing code...
         
-        # Parse timestamp
-        time_parts = time_str.split(':')
-        timestamp = base_date.replace(
-            hour=int(time_parts[0]),
-            minute=int(time_parts[1]),
-            second=int(time_parts[2])
-        )
-        
-        # Handle day rollover
-        if timestamp < base_date:
-            timestamp += timedelta(days=1)
+        # Parse timestamp using helper method
+        timestamp = self._create_timestamp(time_str, base_date)
         
         if event_type in ['connection', 'disconnection']:
             player_name = groups[1]
