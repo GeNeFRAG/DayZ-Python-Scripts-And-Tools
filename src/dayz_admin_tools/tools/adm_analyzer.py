@@ -4,6 +4,22 @@ DayZ ADM Log Analyzer
 This module provides comprehensive analysis of DayZ AdminLog (ADM) files,
 extracting player behavior statistics, combat analytics, building activity,
 and administrative insights.
+
+Features:
+- Player session tracking and statistics
+- Combat event analysis with duplicate detection
+- Environmental and explosion damage tracking
+- Animal death mapping (Bear/Wolf) with special event types
+- Building and construction activity monitoring
+- Performance optimizations with cached configurations
+- Comprehensive data enrichment for analytics
+
+Recent Improvements:
+- Fixed functional regressions in environmental/explosion hit events
+- Added intelligent duplicate combat event detection
+- Performance optimizations with cached special event names
+- Enhanced data quality with comprehensive event details
+- Backward compatibility maintained while improving accuracy
 """
 
 import argparse
@@ -142,13 +158,25 @@ class DayZADMParser:
     
     Separates parsing concerns from analysis, providing a clean interface
     for consuming events and collecting parse error statistics.
+    
+    Features:
+    - Comprehensive regex patterns for all DayZ ADM event types
+    - Performance optimizations with cached special event names
+    - Intelligent duplicate detection for combat events
+    - Enhanced data enrichment for environmental and explosion events
+    - Animal death mapping with friendly names and special event types
+    
+    Attributes:
+        MELEE_AMMO (set): Class-level constant for melee weapon detection
+        _special_event_names (set): Cached special event names for performance
+        _recent_combat_events (list): Recent combat events for duplicate detection
     """
     
-    # Class-level constants
+    # Class-level constants for performance optimization
     MELEE_AMMO = {
         'MeleeFist', 'MeleeAxe', 'MeleeKnife', 'MeleeBat', 'MeleeShovel',
         'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar'
-    }
+    }  # Cached set for efficient melee weapon detection
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the parser with configuration."""
@@ -355,7 +383,26 @@ class DayZADMParser:
             return default
     
     def _safe_named_group_float(self, match, group_name: str, default: float = 0.0) -> float:
-        """Safely access regex named group as float, returning default if group doesn't exist, is None, or conversion fails."""
+        """
+        Safely access regex named group as float with comprehensive error handling.
+        
+        This method prevents None propagation by ensuring numeric defaults
+        are returned when regex groups are missing, None, or invalid.
+        
+        Args:
+            match: Regex match object
+            group_name: Name of the regex group to access
+            default: Default value to return on error (defaults to 0.0)
+            
+        Returns:
+            Float value from regex group or default value
+            
+        Error Handling:
+        - Missing groups return default
+        - None values return default  
+        - Invalid conversions return default
+        - Prevents None propagation in numeric calculations
+        """
         try:
             value = match.group(group_name)
             if value is not None:
@@ -366,7 +413,26 @@ class DayZADMParser:
             return default
     
     def _safe_named_group_int(self, match, group_name: str, default: int = 0) -> int:
-        """Safely access regex named group as int, returning default if group doesn't exist, is None, or conversion fails."""
+        """
+        Safely access regex named group as integer with comprehensive error handling.
+        
+        This method prevents None propagation by ensuring numeric defaults
+        are returned when regex groups are missing, None, or invalid.
+        
+        Args:
+            match: Regex match object
+            group_name: Name of the regex group to access
+            default: Default value to return on error (defaults to 0)
+            
+        Returns:
+            Integer value from regex group or default value
+            
+        Error Handling:
+        - Missing groups return default
+        - None values return default
+        - Invalid conversions return default  
+        - Prevents None propagation in numeric calculations
+        """
         try:
             value = match.group(group_name)
             if value is not None:
@@ -519,7 +585,28 @@ class DayZADMParser:
         return HandlerResult(event=event)
 
     def _handle_hit_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle hit events with combat event creation."""
+        """
+        Handle hit events with comprehensive combat analytics and duplicate detection.
+        
+        This method processes hit events and creates combat analytics with
+        intelligent duplicate detection to prevent double-counting when
+        both hit and kill events occur for the same engagement.
+        
+        Args:
+            event_type: The type of event ('hit')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing both the base hit event and any combat events
+            
+        Features:
+        - Ensures numeric defaults don't propagate None values
+        - Creates comprehensive CombatEvent analytics
+        - Implements duplicate detection within 1-second windows
+        - Tracks damage, health, distance, and weapon details
+        """
         timestamp, _, _, details = self._base_event(event_type, match, base_date, raw_line)
         
         # Extract hit event data
@@ -594,7 +681,28 @@ class DayZADMParser:
         return HandlerResult(event=event, combat_events=combat_events)
 
     def _handle_kill_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle kill events."""
+        """
+        Handle kill events with intelligent duplicate detection.
+        
+        This method processes kill events and creates combat events only when
+        there isn't a recent corresponding hit event, preventing duplicates
+        while ensuring standalone kills are captured for PvP analytics.
+        
+        Args:
+            event_type: The type of event ('kill')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing the event and combat events
+            
+        Features:
+        - Duplicate detection within 1-second window
+        - Comprehensive combat event creation for standalone kills
+        - Memory-efficient recent event tracking
+        - Backward compatibility with existing analytics
+        """
         timestamp, _, _, details = self._base_event(event_type, match, base_date, raw_line)
         v_name = self._safe_named_group_access(match, 'victim_name')
         v_id = self._safe_named_group_access(match, 'victim_id')
@@ -664,7 +772,28 @@ class DayZADMParser:
         return HandlerResult(event, combat_events)
 
     def _handle_env_hit_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle environmental hit events."""
+        """
+        Handle environmental hit events with comprehensive data enrichment.
+        
+        This method processes environmental damage events (e.g., fall damage,
+        structure damage) and enriches them with attacker, weapon, and health
+        information to maintain consistency with combat analytics.
+        
+        Args:
+            event_type: The type of event ('env_hit')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing the enriched event
+            
+        Enriched Details:
+        - victim_hp: Player health after hit
+        - attacker_name: Environmental damage source
+        - weapon: Weapon or damage type
+        - Standardized damage tracking fields
+        """
         timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         hp = self._safe_named_group_float(match, 'hp')
@@ -721,7 +850,28 @@ class DayZADMParser:
         return HandlerResult(event=event)
 
     def _handle_explosion_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle explosion hit events."""
+        """
+        Handle explosion hit events with comprehensive damage tracking.
+        
+        This method processes explosion damage events and enriches them with
+        attacker information, weapon details, and health tracking to provide
+        complete combat analytics for explosive encounters.
+        
+        Args:
+            event_type: The type of event ('explosion')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing the enriched explosion event
+            
+        Enriched Details:
+        - victim_hp: Player health after explosion
+        - attacker_name: Source of explosive damage
+        - weapon: Explosive weapon type
+        - Full damage tracking for analytics
+        """
         timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         hp = self._safe_named_group_float(match, 'hp')
@@ -774,7 +924,28 @@ class DayZADMParser:
         return HandlerResult(event=event)
 
     def _handle_death_other_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle death by specific cause events."""
+        """
+        Handle other death events including animal deaths and environmental fatalities.
+        
+        This method processes non-player deaths and categorizes them appropriately,
+        with special handling for animal deaths that require attacker mapping
+        and classification as special events.
+        
+        Args:
+            event_type: The type of event ('death_other')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing the processed death event
+            
+        Processing Logic:
+        - Maps animal classnames to readable names
+        - Identifies deaths as 'special' events when needed
+        - Tracks attacker information for animal kills
+        - Maintains consistent death tracking format
+        """
         timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
@@ -1010,11 +1181,28 @@ class DayZADMAnalyzer(FileBasedTool):
     Analyzes DayZ AdminLog (ADM) files to extract player behavior statistics.
     
     This tool provides comprehensive analytics including:
-    - Player session statistics
-    - Combat analytics  
-    - Building/construction activity
+    - Player session statistics with duration and distance tracking
+    - Combat analytics with duplicate detection and comprehensive event data
+    - Building/construction activity monitoring
     - Movement and positioning analysis
     - Administrative insights and anomaly detection
+    - Environmental and explosion damage tracking
+    - Animal death analysis with special event mapping
+    
+    Features:
+    - Intelligent duplicate combat event detection
+    - Performance optimizations with cached configurations
+    - Enhanced data enrichment for all event types
+    - Comprehensive CSV export capabilities
+    - Markdown summary generation
+    - Backward compatibility with existing analytics
+    
+    Recent Improvements:
+    - Fixed environmental/explosion hits to include attacker/weapon details
+    - Added animal death mapping (Bear/Wolf) with special event types
+    - Implemented intelligent duplicate detection for combat events
+    - Performance optimizations with cached special event names
+    - Enhanced kill event tracking for comprehensive PvP analytics
     """
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
