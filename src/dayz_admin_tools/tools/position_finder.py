@@ -349,6 +349,137 @@ class PositionFinder(FileBasedTool):
         """
         return self.find_positions_by_player(file_pattern, player_name_filter, placement_filter)
 
+    def find_combined_filters(self, file_pattern: Optional[str] = None, 
+                             target_x: Optional[float] = None, target_y: Optional[float] = None, radius: float = 100.0,
+                             player_name_filter: str = "", placement_filter: Optional[str] = None,
+                             start_date: Optional[str] = None, end_date: Optional[str] = None) -> List[tuple]:
+        """
+        Find positions using combined coordinate, player, placement, and date filters
+        
+        Args:
+            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
+            target_x: Target X coordinate (optional)
+            target_y: Target Y coordinate (optional)
+            radius: Search radius in meters (default: 100.0)
+            player_name_filter: Player name to filter by (automatically detects regex patterns)
+            placement_filter: Filter for placement actions (e.g., "placed", "Fireplace", "Wooden Crate")
+            start_date: Start date filter in D.M.YYYY format (optional)
+            end_date: End date filter in D.M.YYYY format (optional)
+        
+        Returns:
+            List of tuples containing position information with distance (if coordinates provided)
+        """
+        # Auto-detect if the player filter contains regex patterns
+        use_regex = self._is_regex_pattern(player_name_filter) if player_name_filter else False
+        
+        # Precompile regex pattern if needed
+        if use_regex:
+            try:
+                self._player_regex = re.compile(player_name_filter, re.IGNORECASE)
+                logger.info(f"Auto-detected regex pattern for player search: {player_name_filter}")
+            except re.error as e:
+                logger.error(f"Invalid regex pattern '{player_name_filter}': {e}")
+                return []
+        else:
+            self._player_regex = None
+            if player_name_filter:
+                logger.info(f"Using substring search for player: {player_name_filter}")
+
+        # Handle placement filter
+        placement_regex = None
+        use_placement_regex = False
+        if placement_filter:
+            use_placement_regex = self._is_regex_pattern(placement_filter)
+            if use_placement_regex:
+                try:
+                    placement_regex = re.compile(placement_filter, re.IGNORECASE)
+                    logger.info(f"Auto-detected regex pattern for placement search: {placement_filter}")
+                except re.error as e:
+                    logger.error(f"Invalid regex pattern '{placement_filter}': {e}")
+                    return []
+            else:
+                logger.info(f"Using substring search for placement: {placement_filter}")
+
+        # Determine if we're doing coordinate filtering
+        use_coordinates = target_x is not None and target_y is not None
+
+        def process_combined_line(filename, line_num, file_date, time_str, player_name, coords, action):
+            """Process line for combined search"""
+            # Check player name filter
+            player_match = True
+            if player_name_filter and player_name:
+                if use_regex and self._player_regex:
+                    player_match = bool(self._player_regex.search(player_name))
+                elif not use_regex:
+                    player_match = player_name_filter.lower() in player_name.lower()
+                else:
+                    player_match = False
+            elif player_name_filter:
+                player_match = False
+            
+            # Check placement filter
+            placement_match = True
+            if placement_filter and action:
+                if use_placement_regex and placement_regex:
+                    placement_match = bool(placement_regex.search(action))
+                elif not use_placement_regex:
+                    placement_match = placement_filter.lower() in action.lower()
+                else:
+                    placement_match = False
+            elif placement_filter:
+                placement_match = False
+            
+            # Check coordinate filter
+            coordinate_match = True
+            distance = None
+            if use_coordinates and coords:
+                x, y, z = coords
+                distance = self._calculate_distance(target_x, target_y, x, y)
+                coordinate_match = distance <= radius
+            elif use_coordinates:
+                coordinate_match = False  # No coordinates available but coordinates required
+            
+            if player_match and placement_match and coordinate_match:
+                if use_coordinates:
+                    return (filename, line_num, file_date, time_str, player_name, coords, action, distance)
+                else:
+                    return (filename, line_num, file_date, time_str, player_name, coords, action)
+            return None
+        
+        # Build search description
+        search_description = []
+        if player_name_filter:
+            search_description.append(f"player: {player_name_filter} {'(auto-detected regex)' if use_regex else '(substring)'}")
+        if placement_filter:
+            search_description.append(f"placement: {placement_filter} {'(auto-detected regex)' if use_placement_regex else '(substring)'}")
+        if use_coordinates:
+            search_description.append(f"within {radius}m of ({target_x}, {target_y})")
+        if start_date or end_date:
+            date_parts = []
+            if start_date:
+                date_parts.append(f"from {start_date}")
+            if end_date:
+                date_parts.append(f"to {end_date}")
+            search_description.append(" ".join(date_parts))
+        
+        description = " and ".join(search_description) if search_description else "all actions"
+        
+        results = self._process_files(
+            file_pattern,
+            process_combined_line,
+            description
+        )
+        
+        # Apply date filtering if specified
+        if start_date or end_date:
+            results = self._filter_by_date_range(results, start_date, end_date)
+        
+        # Sort results appropriately
+        if use_coordinates:
+            return sorted(results, key=lambda x: x[7])  # Sort by distance
+        else:
+            return results
+
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
         """
         Filter results by date range
@@ -398,10 +529,10 @@ class PositionFinder(FileBasedTool):
 
     def _save_to_csv(self, results: List[tuple], output_file: str):
         """
-        Save results to CSV file
+        Save results to CSV file (with distance column for coordinate-based searches)
         
         Args:
-            results: List of result tuples
+            results: List of result tuples (8 elements: filename, line_num, file_date, time_str, player_name, coords, action, distance)
             output_file: Name of the CSV file to create
         """
         try:
@@ -421,18 +552,28 @@ class PositionFinder(FileBasedTool):
             headers = ['File', 'Line', 'Date', 'Time', 'Player', 'X', 'Y', 'Z', 'Action', 'Distance']
             
             # Process each result
-            for filename, line_num, file_date, time_str, player_name, coords, action, distance in results:
+            for result in results:
+                if len(result) == 8:  # With distance
+                    filename, line_num, file_date, time_str, player_name, coords, action, distance = result
+                    distance_str = f"{distance:.2f}"
+                elif len(result) == 7:  # Without distance
+                    filename, line_num, file_date, time_str, player_name, coords, action = result
+                    distance_str = "N/A"
+                else:
+                    logger.warning(f"Unexpected result tuple length: {len(result)}")
+                    continue
+                    
                 data.append({
                     'File': filename,
                     'Line': line_num,
                     'Date': file_date,
                     'Time': time_str,
                     'Player': player_name,
-                    'X': f"{coords[0]:.1f}",
-                    'Y': f"{coords[1]:.1f}",
-                    'Z': f"{coords[2]:.1f}",
+                    'X': f"{coords[0]:.1f}" if coords else "",
+                    'Y': f"{coords[1]:.1f}" if coords else "",
+                    'Z': f"{coords[2]:.1f}" if coords else "",
                     'Action': action if action else "",
-                    'Distance': f"{distance:.2f}"
+                    'Distance': distance_str
                 })
             
             # Use write_csv from FileBasedTool
@@ -444,10 +585,10 @@ class PositionFinder(FileBasedTool):
 
     def _save_player_positions_to_csv(self, results: List[tuple], output_file: str):
         """
-        Save player positions to CSV file
+        Save player positions to CSV file (without distance column for non-coordinate searches)
         
         Args:
-            results: List of result tuples
+            results: List of result tuples (7 or 8 elements)
             output_file: Name of the CSV file to create
         """
         try:
@@ -467,7 +608,15 @@ class PositionFinder(FileBasedTool):
             headers = ['File', 'Line', 'Date', 'Time', 'Player', 'X', 'Y', 'Z', 'Action']
             
             # Process each result
-            for filename, line_num, file_date, time_str, player_name, coords, action in results:
+            for result in results:
+                if len(result) == 8:  # With distance (ignore distance for this output)
+                    filename, line_num, file_date, time_str, player_name, coords, action, distance = result
+                elif len(result) == 7:  # Without distance
+                    filename, line_num, file_date, time_str, player_name, coords, action = result
+                else:
+                    logger.warning(f"Unexpected result tuple length: {len(result)}")
+                    continue
+                    
                 data.append({
                     'File': filename,
                     'Line': line_num,
@@ -505,48 +654,73 @@ class PositionFinder(FileBasedTool):
         # Build output file path
         output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
         
-        if args.player or args.placement:
-            if args.target_x is not None or args.target_y is not None:
-                logger.warning("Target coordinates are ignored when searching by player name or placement actions")
-            
-            # Determine search parameters
-            player_filter = args.player if args.player else ""
-            placement_filter = args.placement if args.placement else None
-            
-            # If only placement is specified, search all players for that placement
-            if args.placement and not args.player:
-                results = self.find_placement_actions(args.file_pattern, "", args.placement)
-                search_type = f"placement actions: {args.placement}"
-            # If both player and placement are specified, or only player
-            else:
-                results = self.find_positions_by_player(args.file_pattern, player_filter, placement_filter)
-                if placement_filter:
-                    search_type = f"player: {player_filter} with placement: {placement_filter}"
-                else:
-                    search_type = f"player: {player_filter}"
-                
-            if not results:
-                logger.info(f"No positions found for {search_type}.")
-                return
-                
-            results = self._filter_by_date_range(results, args.start_date, args.end_date)
-            results = self._sort_by_time(results)
-            self._save_player_positions_to_csv(results, output_file)
-            logger.info(f"Found {len(results)} positions for {search_type}.")
-        else:
-            if args.target_x is None or args.target_y is None:
-                logger.error("Either specify --player and/or --placement for player/action search, or provide target coordinates (--target-x and --target-y) for location-based search.")
-                return
-                
-            results = self.find_nearby_positions(args.file_pattern, args.target_x, args.target_y, args.radius)
-            if not results:
-                logger.info(f"No positions found within {args.radius}m radius of ({args.target_x}, {args.target_y}).")
-                return
-                
-            results = self._filter_by_date_range(results, args.start_date, args.end_date)
-            results = self._sort_by_time(results)
+        # Determine what filters are being used
+        has_player = bool(args.player)
+        has_placement = bool(args.placement)
+        has_coordinates = args.target_x is not None and args.target_y is not None
+        
+        # Check for valid combinations
+        if not has_player and not has_placement and not has_coordinates:
+            logger.error("You must specify at least one filter: --player, --placement, or coordinates (--target-x and --target-y)")
+            return
+        
+        if has_coordinates and (args.target_x is None or args.target_y is None):
+            logger.error("Both --target-x and --target-y must be specified for coordinate filtering")
+            return
+        
+        # Use the new combined filter method
+        player_filter = args.player if has_player else ""
+        placement_filter = args.placement if has_placement else None
+        target_x = args.target_x if has_coordinates else None
+        target_y = args.target_y if has_coordinates else None
+        
+        results = self.find_combined_filters(
+            args.file_pattern, 
+            target_x, target_y, args.radius,
+            player_filter, placement_filter,
+            args.start_date, args.end_date
+        )
+        
+        if not results:
+            # Build search description for logging
+            search_parts = []
+            if has_player:
+                search_parts.append(f"player: {args.player}")
+            if has_placement:
+                search_parts.append(f"placement: {args.placement}")
+            if has_coordinates:
+                search_parts.append(f"within {args.radius}m of ({args.target_x}, {args.target_y})")
+            search_description = " and ".join(search_parts)
+            logger.info(f"No positions found for {search_description}.")
+            return
+        
+        # Apply sorting (date filtering is already done in find_combined_filters)
+        results = self._sort_by_time(results)
+        
+        # Save results using the appropriate method based on whether we have distance data
+        if has_coordinates:
             self._save_to_csv(results, output_file)
-            logger.info(f"Found {len(results)} positions within {args.radius}m radius.")
+        else:
+            self._save_player_positions_to_csv(results, output_file)
+        
+        # Build search description for final logging
+        search_parts = []
+        if has_player:
+            search_parts.append(f"player: {args.player}")
+        if has_placement:
+            search_parts.append(f"placement: {args.placement}")
+        if has_coordinates:
+            search_parts.append(f"within {args.radius}m of ({args.target_x}, {args.target_y})")
+        if args.start_date or args.end_date:
+            date_range = []
+            if args.start_date:
+                date_range.append(f"from {args.start_date}")
+            if args.end_date:
+                date_range.append(f"to {args.end_date}")
+            search_parts.append(" ".join(date_range))
+        search_description = " and ".join(search_parts)
+        
+        logger.info(f"Found {len(results)} positions for {search_description}.")
 
 def main():
     """Command-line entry point for the position finder tool."""
@@ -578,6 +752,18 @@ Examples:
   # Find specific item placements by a specific player
   dayz-position-finder --player "SpeckSepp" --placement "Wooden Crate"
   
+  # COMBINED FILTERS - Find player actions within a specific area
+  dayz-position-finder --player "SurvivorName" --target-x 7500 --target-y 8500 --radius 100
+  
+  # COMBINED FILTERS - Find placement actions within a specific area
+  dayz-position-finder --placement "Fireplace" --target-x 7500 --target-y 8500 --radius 200
+  
+  # COMBINED FILTERS - Find specific player's placements within an area
+  dayz-position-finder --player "LinThoDan" --placement "placed" --target-x 7500 --target-y 8500 --radius 150
+  
+  # COMBINED FILTERS - Find specific item placements by specific player in area
+  dayz-position-finder --player "SpeckSepp" --placement "Wooden Crate" --target-x 8440 --target-y 12893 --radius 50
+  
   # Find positions using regex pattern (auto-detected)
   dayz-position-finder --player "Survivor.*"
   
@@ -589,6 +775,27 @@ Examples:
   
   # Regex for placement filtering (auto-detected)
   dayz-position-finder --placement "(Fireplace|Wooden Crate|Tent)"
+  
+  # COMBINED with regex - Find players matching pattern within area
+  dayz-position-finder --player "Survivor.*" --target-x 7500 --target-y 8500 --radius 100
+  
+  # DATE FILTERING - Find player actions within date range
+  dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023
+  
+  # DATE + COORDINATES - Find actions in area within date range
+  dayz-position-finder --target-x 8440 --target-y 12893 --radius 100 --start-date 15.08.2025 --end-date 30.08.2025
+  
+  # DATE + PLAYER + COORDINATES - Find player actions in area within date range
+  dayz-position-finder --player "LinThoDan" --target-x 7500 --target-y 8500 --radius 150 --start-date 01.08.2025 --end-date 31.08.2025
+  
+  # FULL COMBINATION - Player + Placement + Area + Date Range
+  dayz-position-finder --player "SpeckSepp" --placement "Wooden Crate" --target-x 8440 --target-y 12893 --radius 100 --start-date 20.08.2025 --end-date 30.08.2025
+  
+  # DATE + PLACEMENT + COORDINATES - Find placements in area within date range
+  dayz-position-finder --placement "Fireplace" --target-x 7500 --target-y 8500 --radius 200 --start-date 01.07.2025 --end-date 31.07.2025
+  
+  # COMBINED with regex + area + date - Find players matching pattern within area and date range
+  dayz-position-finder --player "Survivor.*" --target-x 7500 --target-y 8500 --radius 100 --start-date 01.08.2025 --end-date 31.08.2025
   
   # Filter by date range and use specific output file
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
