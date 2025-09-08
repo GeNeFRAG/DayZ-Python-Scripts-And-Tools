@@ -3,7 +3,7 @@ Position finder tool for DayZ admin logs.
 
 This module provides functionalities to search player positions
 in DayZ admin log files, filter by coordinates or player names,
-and save the results to CSV files.
+and save the results to CSV files or original ADM log format.
 """
 
 import re
@@ -363,8 +363,8 @@ class PositionFinder(FileBasedTool):
             radius: Search radius in meters (default: 100.0)
             player_name_filter: Player name to filter by (automatically detects regex patterns)
             placement_filter: Filter for placement actions (e.g., "placed", "Fireplace", "Wooden Crate")
-            start_date: Start date filter in D.M.YYYY format (optional)
-            end_date: End date filter in D.M.YYYY format (optional)
+            start_date: Start date filter in D.M.YYYY or D.M.YYYY HH:MM format (optional)
+            end_date: End date filter in D.M.YYYY or D.M.YYYY HH:MM format (optional)
         
         Returns:
             List of tuples containing position information with distance (if coordinates provided)
@@ -482,12 +482,12 @@ class PositionFinder(FileBasedTool):
 
     def _filter_by_date_range(self, results: List[tuple], start_date: Optional[str], end_date: Optional[str]) -> List[tuple]:
         """
-        Filter results by date range
+        Filter results by date range with optional time support
         
         Args:
             results: List of result tuples
-            start_date: Start date in D.M.YYYY format (optional)
-            end_date: End date in D.M.YYYY format (optional)
+            start_date: Start date in D.M.YYYY format or D.M.YYYY HH:MM format (optional)
+            end_date: End date in D.M.YYYY format or D.M.YYYY HH:MM format (optional)
         
         Returns:
             Filtered list of result tuples
@@ -495,25 +495,103 @@ class PositionFinder(FileBasedTool):
         if not start_date and not end_date:
             return results
         
+        # Parse start and end dates with optional time
+        start_datetime_obj = self._parse_datetime(start_date) if start_date else None
+        end_datetime_obj = self._parse_datetime(end_date) if end_date else None
+        
+        # Determine if we're filtering by time (not just date)
+        start_has_time = start_date and ' ' in start_date if start_date else False
+        end_has_time = end_date and ' ' in end_date if end_date else False
+        
         filtered_results = []
-        start_date_obj = datetime.strptime(start_date, "%d.%m.%Y") if start_date else None
-        end_date_obj = datetime.strptime(end_date, "%d.%m.%Y") if end_date else None
         
         for result in results:
-            file_date_str = result[2]
+            file_date_str = result[2]  # File date from result tuple
+            time_str = result[3]       # Time string from result tuple
+            
             if file_date_str == "Unknown date":
                 continue
             
             try:
-                # Parse the D.M.YYYY format
+                # Parse the file date (D.M.YYYY format)
                 file_date_obj = datetime.strptime(file_date_str, "%d.%m.%Y")
-            except ValueError:
+                
+                # If we have time filters, also parse the log entry time
+                if (start_has_time or end_has_time) and time_str:
+                    try:
+                        # Parse time from log entry (HH:MM:SS format)
+                        time_parts = time_str.split(':')
+                        if len(time_parts) >= 2:
+                            hour = int(time_parts[0])
+                            minute = int(time_parts[1])
+                            second = int(time_parts[2]) if len(time_parts) > 2 else 0
+                            
+                            # Combine file date with log entry time
+                            log_datetime_obj = file_date_obj.replace(
+                                hour=hour, 
+                                minute=minute, 
+                                second=second
+                            )
+                        else:
+                            # Fallback to date-only comparison if time parsing fails
+                            log_datetime_obj = file_date_obj
+                    except (ValueError, IndexError):
+                        # Fallback to date-only comparison if time parsing fails
+                        log_datetime_obj = file_date_obj
+                else:
+                    # Use date-only comparison
+                    log_datetime_obj = file_date_obj
+                
+                # Apply filtering based on whether time is specified
+                include_result = True
+                
+                if start_datetime_obj:
+                    if start_has_time:
+                        include_result = include_result and log_datetime_obj >= start_datetime_obj
+                    else:
+                        # Date-only comparison for start date
+                        include_result = include_result and log_datetime_obj.date() >= start_datetime_obj.date()
+                
+                if end_datetime_obj and include_result:
+                    if end_has_time:
+                        include_result = include_result and log_datetime_obj <= end_datetime_obj
+                    else:
+                        # Date-only comparison for end date
+                        include_result = include_result and log_datetime_obj.date() <= end_datetime_obj.date()
+                
+                if include_result:
+                    filtered_results.append(result)
+                    
+            except ValueError as e:
+                logger.debug(f"Date parsing error for result {result}: {e}")
                 continue
-            
-            if (not start_date_obj or file_date_obj >= start_date_obj) and (not end_date_obj or file_date_obj <= end_date_obj):
-                filtered_results.append(result)
         
         return filtered_results
+
+    def _parse_datetime(self, date_str: str) -> Optional[datetime]:
+        """
+        Parse date string with optional time support
+        
+        Args:
+            date_str: Date string in D.M.YYYY or D.M.YYYY HH:MM format
+            
+        Returns:
+            Parsed datetime object or None if parsing fails
+        """
+        if not date_str:
+            return None
+            
+        try:
+            # Try parsing with time first (D.M.YYYY HH:MM)
+            if ' ' in date_str:
+                return datetime.strptime(date_str, "%d.%m.%Y %H:%M")
+            else:
+                # Parse date-only (D.M.YYYY)
+                return datetime.strptime(date_str, "%d.%m.%Y")
+        except ValueError as e:
+            logger.error(f"Invalid date format '{date_str}': {e}")
+            logger.error("Expected formats: D.M.YYYY (e.g., 01.06.2023) or D.M.YYYY HH:MM (e.g., 01.06.2023 14:30)")
+            return None
 
     def _sort_by_time(self, results: List[tuple]) -> List[tuple]:
         """
@@ -636,6 +714,119 @@ class PositionFinder(FileBasedTool):
         except Exception as e:
             logger.error(f"Error saving to CSV: {e}")
 
+    def _save_to_adm(self, results: List[tuple], output_file: str):
+        """
+        Save filtered results to ADM file format (original log format with only filtered lines)
+        
+        Args:
+            results: List of result tuples
+            output_file: Name of the ADM file to create
+        """
+        try:
+            # Extract date and time from the first result for header
+            if results:
+                first_result = results[0]
+                first_file_date = first_result[2]  # File date (D.M.YYYY format)
+                first_time_str = first_result[3]   # Time string (HH:MM:SS format)
+                
+                # Convert file date to YYYY-MM-DD format for header
+                try:
+                    file_date_obj = datetime.strptime(first_file_date, "%d.%m.%Y")
+                    header_date = file_date_obj.strftime("%Y-%m-%d")
+                    
+                    # Use the time from the first entry, or current time as fallback
+                    if first_time_str:
+                        header_time = first_time_str
+                    else:
+                        header_time = datetime.now().strftime("%H:%M:%S")
+                        
+                except ValueError:
+                    # Fallback to current date/time if parsing fails
+                    header_date = datetime.now().strftime("%Y-%m-%d")
+                    header_time = datetime.now().strftime("%H:%M:%S")
+            else:
+                # Fallback to current date/time if no results
+                header_date = datetime.now().strftime("%Y-%m-%d")
+                header_time = datetime.now().strftime("%H:%M:%S")
+            
+            # Generate metadata timestamp for comment
+            current_timestamp = datetime.now().strftime("%Y-%m-%d at %H:%M:%S")
+            
+            # Build a dictionary to group results by original file
+            files_data = {}
+            original_lines = {}
+            
+            # First pass: collect unique source files and read their original lines
+            for result in results:
+                filename = result[0]
+                line_num = result[1]
+                
+                if filename not in files_data:
+                    files_data[filename] = []
+                    original_lines[filename] = {}
+                
+                files_data[filename].append((line_num, result))
+            
+            # Read original lines from source files
+            for filename in files_data.keys():
+                # Find the full path to the source file
+                source_files = self._get_matching_files()
+                source_file_path = None
+                
+                for source_path in source_files:
+                    if os.path.basename(source_path) == filename:
+                        source_file_path = source_path
+                        break
+                
+                if source_file_path and os.path.exists(source_file_path):
+                    try:
+                        with open(source_file_path, 'r', encoding='utf-8') as f:
+                            for current_line_num, line in enumerate(f, 1):
+                                # Store lines that are in our results
+                                for line_num, _ in files_data[filename]:
+                                    if current_line_num == line_num:
+                                        original_lines[filename][line_num] = line.rstrip('\n\r')
+                    except Exception as e:
+                        logger.warning(f"Could not read original lines from {source_file_path}: {e}")
+            
+            # Write to ADM file with format closer to original
+            with open(output_file, 'w', encoding='utf-8') as f:
+                # Add empty lines at the beginning (like original)
+                f.write("\n\n")
+                
+                # Write header similar to original but with warning
+                f.write("******************************************************************************\n")
+                f.write("*** FILTERED ADMIN LOG - NOT A COMPLETE LOG - FOR ANALYSIS ONLY ***\n")
+                f.write("******************************************************************************\n")
+                f.write(f"AdminLog started on {header_date} at {header_time}\n")
+                
+                # Write filtered log entries without file separators for cleaner look
+                for result in results:
+                    filename = result[0]
+                    line_num = result[1]
+                    
+                    # Try to write the original line if available
+                    if filename in original_lines and line_num in original_lines[filename]:
+                        f.write(original_lines[filename][line_num] + "\n")
+                    else:
+                        # Fallback: reconstruct the line from parsed data
+                        time_str = result[3] if result[3] else ""
+                        player_name = result[4] if result[4] else ""
+                        coords = result[5]
+                        action = result[6] if result[6] else ""
+                        
+                        if coords:
+                            reconstructed_line = f'{time_str} | Player "{player_name}" (id=UNKNOWN pos=<{coords[0]:.1f}, {coords[1]:.1f}, {coords[2]:.1f}>) {action}'
+                        else:
+                            reconstructed_line = f'{time_str} | Player "{player_name}" {action}'
+                        
+                        f.write(reconstructed_line + "\n")
+            
+            logger.info(f"Filtered ADM results saved to: {output_file} (entries: {len(results)})")
+            
+        except Exception as e:
+            logger.error(f"Error saving to ADM format: {e}")
+
     def run(self, args) -> None:
         """
         Run the position finder tool.
@@ -646,13 +837,53 @@ class PositionFinder(FileBasedTool):
         # Ensure output directory exists
         os.makedirs(self.resolve_path(self.output_dir), exist_ok=True)
 
-        # Add timestamp to output filename
-        filename, extension = os.path.splitext(args.output)
-        extension = extension.lstrip('.')  # Remove leading dot
-        timestamped_filename = self.generate_timestamped_filename(filename, extension)
+        # Determine output file extension based on format
+        output_format = getattr(args, 'output_format', 'csv')
         
-        # Build output file path
-        output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
+        # For 'both' format, we'll create both files with appropriate extensions
+        if output_format == 'both':
+            # Parse the original filename
+            filename, extension = os.path.splitext(args.output)
+            base_filename = filename
+            
+            # Generate timestamped filenames for both formats
+            csv_filename = self.generate_timestamped_filename(base_filename, 'csv')
+            adm_filename = self.generate_timestamped_filename(base_filename, 'ADM')
+            
+            # Build output file paths
+            csv_output_file = os.path.join(self.resolve_path(self.output_dir), csv_filename)
+            adm_output_file = os.path.join(self.resolve_path(self.output_dir), adm_filename)
+            
+        elif output_format == 'adm':
+            # Change extension to .ADM if user specified csv extension
+            filename, extension = os.path.splitext(args.output)
+            if extension.lower() in ['.csv']:
+                base_filename = filename
+                file_extension = 'ADM'
+            else:
+                base_filename = filename + extension.lstrip('.')
+                file_extension = 'ADM'
+            
+            # Add timestamp to output filename
+            timestamped_filename = self.generate_timestamped_filename(base_filename, file_extension)
+            
+            # Build output file path
+            output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
+            
+        else:
+            # CSV format (default)
+            filename, extension = os.path.splitext(args.output)
+            extension = extension.lstrip('.')  # Remove leading dot
+            if not extension:
+                extension = 'csv'
+            base_filename = filename
+            file_extension = extension
+
+            # Add timestamp to output filename
+            timestamped_filename = self.generate_timestamped_filename(base_filename, file_extension)
+            
+            # Build output file path
+            output_file = os.path.join(self.resolve_path(self.output_dir), timestamped_filename)
         
         # Determine what filters are being used
         has_player = bool(args.player)
@@ -697,8 +928,18 @@ class PositionFinder(FileBasedTool):
         # Apply sorting (date filtering is already done in find_combined_filters)
         results = self._sort_by_time(results)
         
-        # Save results using the appropriate method based on whether we have distance data
-        if has_coordinates:
+        # Save results using the appropriate method based on output format
+        if output_format == 'both':
+            # Save both CSV and ADM formats
+            if has_coordinates:
+                self._save_to_csv(results, csv_output_file)
+            else:
+                self._save_player_positions_to_csv(results, csv_output_file)
+            self._save_to_adm(results, adm_output_file)
+            
+        elif output_format == 'adm':
+            self._save_to_adm(results, output_file)
+        elif has_coordinates:
             self._save_to_csv(results, output_file)
         else:
             self._save_player_positions_to_csv(results, output_file)
@@ -782,8 +1023,14 @@ Examples:
   # DATE FILTERING - Find player actions within date range
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023
   
+  # DATE + TIME FILTERING - Find actions within specific time range
+  dayz-position-finder --player "Player15957802" --start-date "07.09.2025 16:00" --end-date "07.09.2025 18:30"
+  
   # DATE + COORDINATES - Find actions in area within date range
   dayz-position-finder --target-x 8440 --target-y 12893 --radius 100 --start-date 15.08.2025 --end-date 30.08.2025
+  
+  # TIME-SPECIFIC COORDINATE SEARCH - Find actions in area at specific time
+  dayz-position-finder --target-x 4631 --target-y 10439 --radius 50 --start-date "05.09.2025 16:00" --end-date "05.09.2025 17:00"
   
   # DATE + PLAYER + COORDINATES - Find player actions in area within date range
   dayz-position-finder --player "LinThoDan" --target-x 7500 --target-y 8500 --radius 150 --start-date 01.08.2025 --end-date 31.08.2025
@@ -797,8 +1044,23 @@ Examples:
   # COMBINED with regex + area + date - Find players matching pattern within area and date range
   dayz-position-finder --player "Survivor.*" --target-x 7500 --target-y 8500 --radius 100 --start-date 01.08.2025 --end-date 31.08.2025
   
+  # TIME-BASED FILTERING - Find actions within specific time window
+  dayz-position-finder --placement "placed" --start-date "08.09.2025 14:00" --end-date "08.09.2025 16:00"
+  
   # Filter by date range and use specific output file
   dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
+  
+  # Save results in original ADM log format instead of CSV
+  dayz-position-finder --player "LinThoDan" --placement "placed" --output-format adm --output filtered_results.ADM
+  
+  # Find player actions and save as ADM file for further analysis
+  dayz-position-finder --player "SpeckSepp" --target-x 8440 --target-y 12893 --radius 100 --output-format adm
+  
+  # Save results in both CSV and ADM formats
+  dayz-position-finder --player "Player15957802" --placement "placed" --output-format both --output results
+  
+  # Generate both formats for coordinate-based search
+  dayz-position-finder --target-x 7500 --target-y 8500 --radius 100 --output-format both
   
   # Use configuration profile
   dayz-position-finder --profile myserver --target-x 7500 --target-y 8500
@@ -808,11 +1070,12 @@ Examples:
     parser.add_argument('--target-x', type=float, help='Target X coordinate for location-based search')
     parser.add_argument('--target-y', type=float, help='Target Y coordinate for location-based search')
     parser.add_argument('--radius', type=float, default=100.0, help='Search radius in meters (default: 100.0)')
-    parser.add_argument('--output', default='positions.csv', help='Output CSV file name (default: positions.csv)')
+    parser.add_argument('--output', default='positions.csv', help='Output file name (default: positions.csv)')
+    parser.add_argument('--output-format', choices=['csv', 'adm', 'both'], default='csv', help='Output format: csv for CSV file (default), adm for original ADM log format, or both for both formats')
     parser.add_argument('--player', help='Player name to filter by (regex patterns are auto-detected)')
     parser.add_argument('--placement', help='Filter for placement actions (e.g., "placed", "Fireplace", "Wooden Crate"). Can be used alone or with --player')
-    parser.add_argument('--start-date', help='Start date in D.M.YYYY format (e.g., 01.06.2023)')
-    parser.add_argument('--end-date', help='End date in D.M.YYYY format (e.g., 30.06.2023)')
+    parser.add_argument('--start-date', help='Start date filter in D.M.YYYY format (e.g., 01.06.2023) or D.M.YYYY HH:MM format (e.g., 01.06.2023 14:30)')
+    parser.add_argument('--end-date', help='End date filter in D.M.YYYY format (e.g., 30.06.2023) or D.M.YYYY HH:MM format (e.g., 30.06.2023 18:45)')
     
     # For backward compatibility
     parser.add_argument('file_pattern_pos', nargs='?', help='File pattern (positional argument, deprecated)')
