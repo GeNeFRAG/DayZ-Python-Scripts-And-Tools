@@ -369,9 +369,6 @@ class LootmaxComparer(XMLTool):
                 logger.error("Merge output file not specified")
                 return False
             
-            # Define attribute order priority (name first, lootmax second)
-            attribute_order = ['name', 'lootmax']
-            
             # Parse source file (file2) to extract lootmax values
             source_root = self.read_xml_with_comments(self.file2)
             

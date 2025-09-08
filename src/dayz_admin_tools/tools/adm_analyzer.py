@@ -2060,7 +2060,7 @@ Examples:
                 reverse=True
             )
             md_lines.append(f"\n**Top 10 Most Active Players (by playtime):**")
-            for idx, (player_id, stats) in enumerate(sorted_players[:10], 1):
+            for player_id, stats in sorted_players[:10]:
                 md_lines.append(f"* {stats['name']}: {stats['total_playtime_hours']:.1f}h, {stats.get('kills (PvP)', 0)} kills (PvP), {stats.get('deaths', 0)} deaths, {stats.get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
 
         # Special event counts
@@ -2083,7 +2083,7 @@ Examples:
             reverse=True
         )
         md_lines.append(f"\n**Top 10 Most Active Builders:**")
-        for idx, (player_id, stats) in enumerate(sorted_builders[:10], 1):
+        for player_id, stats in sorted_builders[:10]:
             md_lines.append(f"* {stats['name']}: {stats.get('building_actions', 0)} building actions")
 
         # Most weapon used (exclude Melee)
@@ -2093,7 +2093,7 @@ Examples:
             filtered_weapons = [(w, c) for w, c in weapon_usage.items() if w and 'melee' not in w.lower() and w.lower() != '']
             filtered_weapons.sort(key=lambda x: x[1], reverse=True)
             md_lines.append(f"\n**Most Weapon Used (excluding Melee):**")
-            for idx, (weapon, count) in enumerate(filtered_weapons[:5], 1):
+            for weapon, count in filtered_weapons[:5]:
                 md_lines.append(f"* {weapon}: {count} hits")
 
         # Top Killer

@@ -50,7 +50,6 @@ class DeathmatchConfigTool(XMLTool):
         self.mapgrouppos_file = None
         self.filtered_pos_file = None
         self.mapgroupproto_file = None
-        self.output_proto_file = None
         
         # Usage tag
         self.usage_tag = None
