@@ -9,7 +9,6 @@ and output the results to a CSV file.
 import json
 import argparse
 import os
-import csv
 import logging
 from collections import Counter
 from typing import Dict, Any, Optional, List, Set
