@@ -1,9 +1,26 @@
 """
 Position finder tool for DayZ admin logs.
 
-This module provides functionalities to search player positions
-in DayZ admin log files, filter by coordinates or player names,
-and save the results to CSV files or original ADM log format.
+This module provides comprehensive functionalities to search and analyze player positions
+and activities in DayZ admin log files. It supports multiple filtering options including:
+
+- Coordinate-based filtering with customizable radius
+- Player name filtering with automatic regex pattern detection
+- Placement action filtering (e.g., "placed", "Fireplace", "Wooden Crate")
+- Date and time range filtering with flexible format support
+- Combined filtering using multiple criteria simultaneously
+
+The tool can save results in multiple formats:
+- CSV files for data analysis and spreadsheet import
+- Original ADM log format for further log analysis
+- Both formats simultaneously for maximum flexibility
+
+Key features:
+- Auto-detection of regex patterns in player name and placement filters
+- Support for date-only or date+time filtering
+- Distance calculations for coordinate-based searches
+- Timestamped output files to prevent overwrites
+- Comprehensive error handling and logging
 """
 
 import re

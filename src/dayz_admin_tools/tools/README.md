@@ -228,45 +228,97 @@ dayz-duping-detector --profile myserver
 **Script**: `position_finder.py`  
 **CLI Command**: `dayz-position-finder` or `bin/position_finder`
 
-Locates player positions in DayZ server logs, allowing administrators to track player movements and activities at specific coordinates.
+Comprehensive position and activity analysis tool for DayZ admin logs. Provides advanced filtering capabilities to search player positions, activities, and placements with support for multiple simultaneous filters and output formats.
 
 **Features**:
-- Find all players near specified coordinates within a given radius
-- Search for all positions and activities of a specific player
-- Filter results by date ranges
-- Sort results chronologically
-- Export position data to timestamped CSV files
-- Support for multiple log file patterns
+- **Coordinate-based filtering** with customizable radius
+- **Player name filtering** with automatic regex pattern detection
+- **Placement action filtering** (e.g., "placed", "Fireplace", "Wooden Crate")
+- **Date and time range filtering** with flexible format support (date-only or date+time)
+- **Combined filtering** using multiple criteria simultaneously
+- **Multiple output formats**: CSV, original ADM log format, or both
+- **Auto-detection of regex patterns** in player name and placement filters
+- **Distance calculations** for coordinate-based searches
+- **Timestamped output files** to prevent overwrites
+- Comprehensive error handling and logging
 
-**Usage**:
+**Usage Examples**:
+
+*Basic Searches:*
 ```bash
-# Find positions near coordinates using default *.ADM pattern
+# Find positions near coordinates
 dayz-position-finder --target-x 7500 --target-y 8500 --radius 100
-
-# Find positions near coordinates with specific file pattern
-dayz-position-finder --file_pattern "*.ADM" --target-x 7500 --target-y 8500 --radius 100
 
 # Find positions for a specific player
 dayz-position-finder --player "SurvivorName"
 
-# Filter by date range and use specific output file
-dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023 --output player_positions.csv
+# Find all placement actions by any player
+dayz-position-finder --placement "placed"
 
-# Use configuration profile
-dayz-position-finder --profile myserver --target-x 7500 --target-y 8500
+# Find specific item placements
+dayz-position-finder --placement "Fireplace"
+```
+
+*Combined Filters:*
+```bash
+# Find player actions within a specific area
+dayz-position-finder --player "SurvivorName" --target-x 7500 --target-y 8500 --radius 100
+
+# Find placement actions within a specific area
+dayz-position-finder --placement "Fireplace" --target-x 7500 --target-y 8500 --radius 200
+
+# Find specific player's placements within an area
+dayz-position-finder --player "LinThoDan" --placement "placed" --target-x 7500 --target-y 8500 --radius 150
+```
+
+*Regex Pattern Support (Auto-detected):*
+```bash
+# Find multiple players with regex pattern
+dayz-position-finder --player "(john|jane|bob)"
+
+# Advanced regex patterns
+dayz-position-finder --player "^Player[0-9]+$"
+
+# Regex for placement filtering
+dayz-position-finder --placement "(Fireplace|Wooden Crate|Tent)"
+```
+
+*Date and Time Filtering:*
+```bash
+# Find actions within date range
+dayz-position-finder --player "SurvivorName" --start-date 01.06.2023 --end-date 30.06.2023
+
+# Find actions within specific time range
+dayz-position-finder --player "Player15957802" --start-date "07.09.2025 16:00" --end-date "07.09.2025 18:30"
+
+# Combined date + coordinates + player
+dayz-position-finder --player "LinThoDan" --target-x 7500 --target-y 8500 --radius 150 --start-date 01.08.2025 --end-date 31.08.2025
+```
+
+*Output Format Options:*
+```bash
+# Save results in original ADM log format
+dayz-position-finder --player "LinThoDan" --placement "placed" --output-format adm
+
+# Save results in both CSV and ADM formats
+dayz-position-finder --player "Player15957802" --placement "placed" --output-format both --output results
 ```
 
 **Parameters**:
 - `--file_pattern`: File pattern to search (e.g. "*.ADM") (optional, uses default "*.ADM" pattern if not specified)
-- `--target-x`: Target X coordinate for location-based search (required unless using --player)
-- `--target-y`: Target Y coordinate for location-based search (required unless using --player)
+- `--target-x`: Target X coordinate for location-based search (optional)
+- `--target-y`: Target Y coordinate for location-based search (optional)
 - `--radius`: Search radius in meters (optional, default: 100.0)
-- `--output`: Output CSV file name (optional, default: positions.csv)
-- `--player`: Player name to filter by (optional, alternative to coordinate search)
-- `--start-date`: Start date in D.M.YYYY format (e.g., 01.06.2023) (optional)
-- `--end-date`: End date in D.M.YYYY format (e.g., 30.06.2023) (optional)
+- `--output`: Output file name (optional, default: positions.csv)
+- `--output-format`: Output format: csv (default), adm, or both (optional)
+- `--player`: Player name to filter by (automatically detects regex patterns) (optional)
+- `--placement`: Filter for placement actions (automatically detects regex patterns) (optional)
+- `--start-date`: Start date in D.M.YYYY or D.M.YYYY HH:MM format (optional)
+- `--end-date`: End date in D.M.YYYY or D.M.YYYY HH:MM format (optional)
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
+
+**Note**: At least one filter (--player, --placement, or coordinates) must be specified.
 
 ### Search Overtime Finder
 
