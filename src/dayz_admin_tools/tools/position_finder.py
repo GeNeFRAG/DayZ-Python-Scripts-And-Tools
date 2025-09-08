@@ -30,9 +30,8 @@ class PositionFinder(FileBasedTool):
         """
         super().__init__(config)
         self.initialize_directories()
-        # Get default patterns from config but only use *.ADM pattern
-        config_patterns = self.get_config('log_filtering.default_patterns', ["*.RPT", "*.ADM"])
-        self.default_pattern = "*.ADM"  # Always use *.ADM pattern regardless of config
+        # Always use *.ADM pattern for position finding
+        self.default_pattern = "*.ADM"
         self._player_regex = None  # Cache for compiled regex pattern
         # Precompiled regex to detect regex metacharacters
         self._regex_detector = re.compile(r'[.*+?^${}()|[\]\\]')
@@ -206,37 +205,6 @@ class PositionFinder(FileBasedTool):
                     
         return results
 
-    def find_nearby_positions(self, file_pattern: Optional[str] = None, target_x: float = 0.0, target_y: float = 0.0, radius: float = 100.0) -> List[tuple]:
-        """
-        Find positions within specified radius of target coordinates in multiple files
-        
-        Args:
-            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
-            target_x: Target X coordinate
-            target_y: Target Y coordinate
-            radius: Search radius in meters
-            
-        Returns:
-            List of tuples containing position information
-        """
-        def process_nearby_line(filename, line_num, file_date, time_str, player_name, coords, action):
-            """Process line for nearby position search"""
-            if coords:
-                x, y, z = coords
-                distance = self._calculate_distance(target_x, target_y, x, y)
-                
-                if distance <= radius:
-                    return (filename, line_num, file_date, time_str, player_name, coords, action, distance)
-            return None
-        
-        results = self._process_files(
-            file_pattern,
-            process_nearby_line,
-            f"positions within {radius}m of ({target_x}, {target_y})"
-        )
-        
-        return sorted(results, key=lambda x: x[7])  # Sort by distance
-
     def _is_regex_pattern(self, pattern: str) -> bool:
         """
         Detect if a string contains regex metacharacters
@@ -334,20 +302,6 @@ class PositionFinder(FileBasedTool):
             process_player_line,
             description
         )
-
-    def find_placement_actions(self, file_pattern: Optional[str] = None, player_name_filter: str = "", placement_filter: str = "placed") -> List[tuple]:
-        """
-        Find placement actions in multiple files
-        
-        Args:
-            file_pattern: File pattern to search (e.g. "*.ADM"). If None, uses default *.ADM pattern.
-            player_name_filter: Player name to filter by (automatically detects regex patterns)
-            placement_filter: Filter for placement actions (default: "placed")
-        
-        Returns:
-            List of tuples containing file details and placement actions
-        """
-        return self.find_positions_by_player(file_pattern, player_name_filter, placement_filter)
 
     def find_combined_filters(self, file_pattern: Optional[str] = None, 
                              target_x: Optional[float] = None, target_y: Optional[float] = None, radius: float = 100.0,
