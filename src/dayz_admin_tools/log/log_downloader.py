@@ -88,7 +88,7 @@ class NitradoLogDownloader(DayZTool):
     ) -> bool:
         """
         Filter and download log files based on various criteria.
-        By default, downloads the 2 latest .RPT and 2 latest .ADM files.
+        By default, downloads all .RPT and .ADM files.
 
         Args:
             file_stats: List of file statistics
@@ -96,7 +96,7 @@ class NitradoLogDownloader(DayZTool):
             start_date: Start date in D.M.YYYY format (e.g., 01.06.2023)
             end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
-            latest_default: If True, download 2 latest .RPT and 2 latest .ADM files when no other filters match
+            latest_default: If True, download all .RPT and .ADM files when no other filters match
             download_all: If True, download all .RPT and .ADM files
 
         Returns:
@@ -160,38 +160,13 @@ class NitradoLogDownloader(DayZTool):
                 logger.info(f"Filtered files based on filename patterns: {len(filtered_files)} files")
             
             # If no specific filters applied and latest_default is True,
-            # get the 2 latest .RPT and 2 latest .ADM files
+            # get all .RPT and .ADM files
             if not (date_filtered or pattern_filtered) and latest_default:
-                # Use default filters from config or use 2 latest RPT and ADM as fallback
-                default_limit = self.get_config('log_filtering.default_limit', 2)
-                
-                # Get and sort RPT files by modification date
-                rpt_files = sorted(
-                    [f for f in file_stats if f['name'].endswith('.RPT')],
-                    key=lambda x: x['modified_at'],
-                    reverse=True
-                )
-
-                # Get and sort ADM files by modification date
-                adm_files = sorted(
-                    [f for f in file_stats if f['name'].endswith('.ADM')],
-                    key=lambda x: x['modified_at'],
-                    reverse=True
-                )
-
-                # Add up to default_limit latest RPT files
-                if rpt_files:
-                    filtered_files.extend(rpt_files[:default_limit])
-                    logger.info(f"Selected {len(rpt_files[:default_limit])} latest RPT files")
-                else:
-                    logger.warning("No RPT files found")
-
-                # Add up to default_limit latest ADM files
-                if adm_files:
-                    filtered_files.extend(adm_files[:default_limit])
-                    logger.info(f"Selected {len(adm_files[:default_limit])} latest ADM files")
-                else:
-                    logger.warning("No ADM files found")
+                # Get all RPT and ADM files as fallback
+                filtered_files = [
+                    f for f in file_stats if f['name'].endswith('.RPT') or f['name'].endswith('.ADM')
+                ]
+                logger.info(f"Selected all .RPT and .ADM files: {len(filtered_files)} files")
 
         if not filtered_files:
             logger.warning("No files matched the specified criteria")
@@ -299,7 +274,7 @@ class NitradoLogDownloader(DayZTool):
             end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
             filter_profile: Name of a saved filter profile to apply
-            latest_default: If True, download 2 latest .RPT and 2 latest .ADM files when no other filters match
+            latest_default: If True, download all .RPT and .ADM files when no other filters match
             download_all: If True, download all .RPT and .ADM files
             save_profile: If provided, save these filter settings as a profile with this name
             
@@ -395,7 +370,7 @@ def main():
     filter_group.add_argument(
         "--no-default",
         action="store_true",
-        help="Disable downloading latest .RPT and .ADM files when no other filters match",
+        help="Disable downloading all .RPT and .ADM files when no other filters match",
     )
     filter_group.add_argument(
         "--all",

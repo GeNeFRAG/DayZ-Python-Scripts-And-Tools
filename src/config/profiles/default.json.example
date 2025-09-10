@@ -8,8 +8,7 @@
     "log_download_path": "logs"
   },
     "log_filtering": {
-    "default_patterns": ["*.RPT", "*.ADM"],
-    "default_limit": 2
+    "default_patterns": ["*.RPT", "*.ADM"]
   },
   "log": {
     "filter_profiles_dir": "~/.config/dayz_admin_tools/log_profiles"
@@ -58,7 +57,7 @@
     "events": [
       {
         "name": "treasure_hunt",
-        "regexp": "Player \\\"[^\\\"]+\\\"\\s*\\(id=[A-F0-9]+\\s*pos=<[0-9.-]+,\\s*[0-9.-]+,[0-9.-]+>\\)Player [^<]+<[^>]+> Dug out [^<]+<[^>]+> at position [^\\{]+\\{<[0-9.-]+,[0-9.-]+,[0-9.-]+>}"
+        "regexp": "Player \\\"[^\\\"]+\\\"\\s*\\(id=[A-F0-9]+\\s*pos=<[0-9.-]+,\\s*[0-9.-]+,\\s*[0-9.-]+>\\)Player [^<]+<[^>]+> Dug out [^<]+<[^>]+> at position 0x[0-9a-f]+ \\{<[0-9.-]+,[0-9.-]+,[0-9.-]+>\\}"
       }
     ]
   }

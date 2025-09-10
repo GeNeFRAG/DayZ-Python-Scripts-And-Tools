@@ -37,6 +37,33 @@ from ..base import FileBasedTool
 logger = logging.getLogger(__name__)
 
 
+def format_european_number(value, decimal_places=None):
+    """
+    Format numbers using European conventions:
+    - Period (.) as thousand separator  
+    - Comma (,) as decimal separator
+    """
+    if value is None:
+        return "0"
+    
+    if isinstance(value, (int, float)):
+        if decimal_places is not None:
+            # Format with specific decimal places AND thousand separators
+            formatted = f"{float(value):,.{decimal_places}f}"
+        else:
+            # Auto-format based on type
+            if isinstance(value, int) or (isinstance(value, float) and value.is_integer()):
+                formatted = f"{int(value):,}"
+            else:
+                formatted = f"{value:,.2f}"
+        
+        # Replace comma with temporary placeholder, then dot with comma, then placeholder with dot
+        formatted = formatted.replace(',', '|TEMP|').replace('.', ',').replace('|TEMP|', '.')
+        return formatted
+    
+    return str(value)
+
+
 @dataclass
 class PlayerEvent:
     """Represents a single player event from the ADM log."""
@@ -92,12 +119,16 @@ class PlayerSession:
     
     @property
     def distance_traveled(self) -> float:
-        """Calculate total distance traveled during session."""
+        """Calculate total distance traveled during session, filtering out teleportations."""
         if len(self.positions) < 2:
             return 0.0
         
         total_distance = 0.0
+        max_reasonable_speed = 500.0  # 500 m/min = 30 km/h (fast vehicle speed)
+        
         for i in range(1, len(self.positions)):
+            prev_timestamp = self.positions[i-1][0]
+            curr_timestamp = self.positions[i][0]
             prev_pos = self.positions[i-1][1:]  # Skip timestamp
             curr_pos = self.positions[i][1:]    # Skip timestamp
             
@@ -105,7 +136,23 @@ class PlayerSession:
             distance = ((curr_pos[0] - prev_pos[0]) ** 2 + 
                        (curr_pos[1] - prev_pos[1]) ** 2 + 
                        (curr_pos[2] - prev_pos[2]) ** 2) ** 0.5
-            total_distance += distance
+            
+            # Calculate time difference in minutes
+            time_diff = (curr_timestamp - prev_timestamp).total_seconds() / 60.0
+            
+            # Skip if time difference is too small to avoid division by zero
+            if time_diff < 0.1:  # Less than 6 seconds
+                continue
+                
+            # Calculate speed (meters per minute)
+            speed = distance / time_diff
+            
+            # Filter out teleportations, deaths, and respawns (unrealistic speeds)
+            if speed <= max_reasonable_speed:
+                total_distance += distance
+            # Optionally log filtered movements for debugging
+            # else:
+            #     print(f"Filtered teleportation: {distance:.1f}m in {time_diff:.1f}min = {speed:.1f}m/min")
             
         return total_distance
 
@@ -175,7 +222,7 @@ class DayZADMParser:
     # Class-level constants for performance optimization
     MELEE_AMMO = {
         'MeleeFist', 'MeleeAxe', 'MeleeKnife', 'MeleeBat', 'MeleeShovel',
-        'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar'
+        'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar', 'MeleeSoft'
     }  # Cached set for efficient melee weapon detection
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
@@ -205,7 +252,10 @@ class DayZADMParser:
             'unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is unconscious'),
             'conscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*regained consciousness'),
             'suicide': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)(?:\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>)?\)\s*committed suicide'),
+            'bledout': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*bled out'),
+            'respawn': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is choosing to respawn'),
             'emote': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*performed (?P<emote>[^\s]+)(?:\s+with\s+(?P<emote_item>[^\s]+))?'),
+            'tripwire_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+TripwireTrap\s+into\s+\((?P<hit_location>-?\d+)\)\s+for\s+(?P<damage>[0-9.]+)\s+damage\s+\(TripWireHit\)'),
 
             # --- Combat Events ---
             'hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<victim_id>[A-F0-9]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*\[HP:\s*(?P<victim_hp>[0-9.]+)\]\s*hit by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-F0-9]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*into\s*(?P<hit_location>[^(]+)\((?P<hit_location_id>\d+)\)\s*for\s*(?P<damage>[0-9.]+)\s+damage\s*\((?P<ammo>[^)]+)\)(?:\s*with\s+(?P<weapon>[^\s]+)(?:\s+from\s+(?P<distance>[0-9.]+)\s+meters)?)?'),
@@ -213,11 +263,18 @@ class DayZADMParser:
             'env_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by\s+(?P<attacker>[^\s]+)\s+with\s+(?P<weapon>[^\s]+)'),
             'env_hit_simple': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+(?P<attacker>[^\s]+)$'),
             'explosion_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by explosion\s+\((?P<explosion_type>[^)]+)\)'),
-            'death': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*died\.\s+Stats>\s+Water:\s+(?P<water>[0-9.]+)\s+Energy:\s+(?P<energy>[0-9.]+)\s+Bleed sources:\s+(?P<bleed_sources>\d+)'),
-            'death_other': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+killed by\s+(?P<killer>[^\s]+)'),
+            'death_player': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+killed by\s+(?P<killer>[^\s]+)'),
+            'death_fall': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*0\]\s+hit by\s+FallDamageHealth'),
+            'combat_log_unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is disconnecting while being unconscious'),
 
             # --- Building/Construction Events ---
             'building': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>Built|Dismantled)\s+(?P<structure>[^\s]+)\s+(?P<on_or_from>on|from)\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
+            'mounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Mounted)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>.+)$'),
+            'unmounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Unmounted)\s+(?P<structure>[^\s]+)\s+from\s+(?P<parent>.+)$'),
+            'raisedflag': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+has\s+(?P<action>raised)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>[^\s]+)\s+at\s+<[0-9.-]+,\s*[0-9.-]+,\s*[0-9.-]+>$'),
+            'builtbaseon': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Built\s+(?P<action>base)\s+on\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
+            'dismantle': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)(?P<action>Dismantled)\s+(?P<structure>[^\s]+(?: [^\s]+)*)\s+from\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
+            'repaired': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>repaired)\s+(?P<structure>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
             'packed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+packed\s+(?P<structure>.+?)\s+with\s+(?P<tool>[^\s]+)$'),
             'placed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+placed\s+(?P<structure>.+)$'),
             'folded': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+folded\s+(?P<structure>.+)$'),
@@ -242,13 +299,15 @@ class DayZADMParser:
                     except Exception as e:
                         logger.error(f"Failed to compile special event regexp for '{name}': {e}")
     
-    def parse_file(self, log_file: str, max_malformed_samples: int = 10) -> tuple[List[PlayerEvent], List[CombatEvent], ParseSummary]:
+    def parse_file(self, log_file: str, max_malformed_samples: int = 10, debug_skipped_file: Optional[str] = None, append_debug: bool = False) -> tuple[List[PlayerEvent], List[CombatEvent], ParseSummary]:
         """
         Parse an ADM log file and yield events.
         
         Args:
             log_file: Path to the ADM log file
             max_malformed_samples: Maximum number of malformed line samples to collect
+            debug_skipped_file: Optional path to write all skipped/malformed lines for debugging
+            append_debug: If True, append to debug file instead of overwriting
             
         Returns:
             Tuple of (events, combat_events, parse_summary)
@@ -263,6 +322,23 @@ class DayZADMParser:
         
         logger.info(f"Parsing ADM log file: {log_path}")
         
+        # Setup debug file for skipped lines if requested
+        debug_file = None
+        if debug_skipped_file:
+            try:
+                mode = 'a' if append_debug else 'w'
+                debug_file = open(debug_skipped_file, mode, encoding='utf-8')
+                if not append_debug:
+                    debug_file.write(f"# Debug output for skipped/malformed lines\n")
+                    debug_file.write(f"# Generated at: {datetime.now().isoformat()}\n")
+                    debug_file.write(f"# Format: [LINE_NUMBER] ORIGINAL_LINE\n\n")
+                else:
+                    debug_file.write(f"\n# === Parsing file: {log_path} ===\n")
+                logger.info(f"Debug skipped lines will be {'appended to' if append_debug else 'written to'}: {debug_skipped_file}")
+            except Exception as e:
+                logger.warning(f"Could not open debug file '{debug_skipped_file}': {e}")
+                debug_file = None
+        
         # Extract date from filename for timestamp parsing
         base_date = self._extract_date_from_filename(str(log_path))
         
@@ -275,6 +351,8 @@ class DayZADMParser:
                 line = line.strip()
                 
                 if not line or line.startswith('#'):
+                    if debug_file and line:  # Only write non-empty comment lines
+                        debug_file.write(f"[{line_number:>6}] COMMENT: {line}\n")
                     continue
                 
                 parse_result = self._parse_line(line, base_date, line_number)
@@ -289,13 +367,13 @@ class DayZADMParser:
                         summary.connections += 1
                     elif event_type == 'disconnection':
                         summary.disconnections += 1
-                    elif event_type in ['building', 'placed', 'folded', 'packed']:
+                    elif event_type in ['building', 'mounted', 'unmounted', 'placed', 'folded', 'packed', 'repaired', 'raisedflag', 'builtbaseon', 'dismantle']:
                         summary.building_events += 1
                     elif event_type == 'emote':
                         summary.emotes += 1
                     elif event_type == 'teleported':
                         summary.teleported_events += 1
-                    elif event_type == 'death':
+                    elif event_type in ['bledout', 'death_player', 'death_fall', 'death_by_bear', 'death_by_wolf', 'death_by_explosion', 'death_by_zombie', 'suicide']:
                         summary.deaths += 1
                     
                     # Handle combat events
@@ -312,13 +390,32 @@ class DayZADMParser:
                         
                 elif parse_result.error:
                     summary.malformed_lines += 1
+                    
+                    # Write to debug file if enabled
+                    if debug_file:
+                        debug_file.write(f"[{line_number:>6}] MALFORMED: {line}\n")
+                        if parse_result.error:
+                            debug_file.write(f"         ERROR: {parse_result.error}\n")
+                        debug_file.write("\n")
+                    
                     if len(summary.malformed_samples) < max_malformed_samples:
                         sample = f"Line {line_number}: {parse_result.raw_line[:100]}{'...' if len(parse_result.raw_line) > 100 else ''}"
                         summary.malformed_samples.append(sample)
         
+        # Close debug file if it was opened
+        if debug_file:
+            try:
+                debug_file.write(f"\n# End of debug output - Total malformed lines: {summary.malformed_lines}\n")
+                debug_file.close()
+                logger.info(f"Debug file closed: {debug_skipped_file}")
+            except Exception as e:
+                logger.warning(f"Error closing debug file: {e}")
+        
         logger.info(f"Parsed {summary.parsed_events} events from {summary.total_lines} lines")
         if summary.malformed_lines > 0:
             logger.warning(f"Found {summary.malformed_lines} malformed lines")
+            if debug_skipped_file:
+                logger.info(f"Malformed lines written to debug file: {debug_skipped_file}")
         
         return events, combat_events, summary
     
@@ -411,36 +508,6 @@ class DayZADMParser:
                 return default
         except (IndexError, TypeError, ValueError, AttributeError):
             return default
-    
-    def _safe_named_group_int(self, match, group_name: str, default: int = 0) -> int:
-        """
-        Safely access regex named group as integer with comprehensive error handling.
-        
-        This method prevents None propagation by ensuring numeric defaults
-        are returned when regex groups are missing, None, or invalid.
-        
-        Args:
-            match: Regex match object
-            group_name: Name of the regex group to access
-            default: Default value to return on error (defaults to 0)
-            
-        Returns:
-            Integer value from regex group or default value
-            
-        Error Handling:
-        - Missing groups return default
-        - None values return default
-        - Invalid conversions return default  
-        - Prevents None propagation in numeric calculations
-        """
-        try:
-            value = match.group(group_name)
-            if value is not None:
-                return int(value)
-            else:
-                return default
-        except (IndexError, TypeError, ValueError, AttributeError):
-            return default
 
     def _safe_position_extract_named(self, match, x_name: str, y_name: str, z_name: str) -> Optional[Tuple[float, float, float]]:
         """Safely extract position coordinates from regex named groups."""
@@ -503,15 +570,25 @@ class DayZADMParser:
             'unconscious': self._handle_state_event,
             'conscious': self._handle_state_event,
             'suicide': self._handle_state_event,
+            'bledout': self._handle_state_event,
+            'respawn': self._handle_state_event,
             'emote': self._handle_state_event,
+            'tripwire_hit': self._handle_state_event,
             'hit': self._handle_hit_event,
             'kill': self._handle_kill_event,
             'env_hit': self._handle_env_hit_event,
             'env_hit_simple': self._handle_env_hit_simple_event,
             'explosion_hit': self._handle_explosion_event,
-            'death': self._handle_death_event,
-            'death_other': self._handle_death_other_event,
+            'death_player': self._handle_death_other_event,
+            'death_fall': self._handle_death_other_event,
+            'combat_log_unconscious': self._handle_combat_log_event,
             'building': self._handle_building_event,
+            'mounted': self._handle_building_event,
+            'unmounted': self._handle_building_event,
+            'raisedflag': self._handle_building_event,
+            'builtbaseon': self._handle_building_event,
+            'dismantle': self._handle_building_event,
+            'repaired': self._handle_building_event,
             'packed': self._handle_packed_event,
             'placed': self._handle_placed_event,
             'folded': self._handle_folded_event,
@@ -572,6 +649,18 @@ class DayZADMParser:
             details.update({
                 'emote': emote,
                 'emote_item': emote_item
+            })
+        
+        # Handle tripwire hit specific details
+        elif event_type == 'tripwire_hit':
+            hp = self._safe_named_group_access(match, 'hp', '')
+            hit_location = self._safe_named_group_access(match, 'hit_location', '')
+            damage = self._safe_named_group_access(match, 'damage', '')
+            details.update({
+                'hp': hp,
+                'hit_location': hit_location,
+                'damage': damage,
+                'attacker': 'TripwireTrap'
             })
         
         event = PlayerEvent(
@@ -898,41 +987,16 @@ class DayZADMParser:
         )
         return HandlerResult(event=event)
 
-    def _handle_death_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
-        """Handle death events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
-        position = self._safe_position_extract_named(match, 'x', 'y', 'z')
-        
-        # Additional stats for regular death
-        water = self._safe_named_group_float(match, 'water')
-        energy = self._safe_named_group_float(match, 'energy')
-        bleed_sources = self._safe_named_group_int(match, 'bleed_sources')
-        details.update({
-            'water': water,
-            'energy': energy,
-            'bleed_sources': bleed_sources
-        })
-        
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
-            position=position,
-            details=details
-        )
-        return HandlerResult(event=event)
-
     def _handle_death_other_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """
-        Handle other death events including animal deaths and environmental fatalities.
+        Handle player death events by other causes including animal deaths and environmental fatalities.
         
-        This method processes non-player deaths and categorizes them appropriately,
+        This method processes player deaths caused by non-player entities and categorizes them appropriately,
         with special handling for animal deaths that require attacker mapping
         and classification as special events.
         
         Args:
-            event_type: The type of event ('death_other')
+            event_type: The type of event ('death_player')
             match: Regex match object containing event data
             base_date: Base date for timestamp calculation
             raw_line: Original log line for debugging
@@ -949,41 +1013,120 @@ class DayZADMParser:
         timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
-        # Death by specific cause
-        killer = self._safe_named_group_access(match, 'killer', 'Unknown')
-        ev_type = event_type
-        animal_map = {
-            'Animal_UrsusArctos': ('Bear', 'death_by_bear'),
-            'Animal_CanisLupus_Grey': ('Wolf', 'death_by_wolf'),
-            'Animal_CanisLupus_White': ('Wolf', 'death_by_wolf'),
-        }
-        if killer in animal_map:
-            friendly, ev_type = animal_map[killer]
+        # Handle fall damage deaths differently
+        if event_type == 'death_fall':
             details.update({
-                'attacker_name': friendly,
+                'attacker_name': 'Fall Damage',
                 'attacker_id': None,
                 'attacker_pos': None,
-                'weapon': None,
+                'weapon': 'FallDamageHealth',
                 'distance': None,
                 'kill': True,
-                'special_event': ev_type,
+                'killer': 'FallDamageHealth'
             })
+            ev_type = event_type
         else:
-            details.update({
-                'attacker_name': killer,
-                'attacker_id': None,
-                'attacker_pos': None,
-                'weapon': None,
-                'distance': None,
-                'kill': True,
-            })
-        details['killer'] = killer
+            # Death by specific cause (other deaths)
+            killer = self._safe_named_group_access(match, 'killer', 'Unknown')
+            ev_type = event_type
+            animal_map = {
+                'Animal_UrsusArctos': ('Bear', 'death_by_bear'),
+                'Animal_CanisLupus_Grey': ('Wolf', 'death_by_wolf'),
+                'Animal_CanisLupus_White': ('Wolf', 'death_by_wolf'),
+            }
+            
+            # Check for explosion deaths (grenades, mines, etc.)
+            explosion_keywords = ['6-M7', 'Claymore', 'M18', 'RGD', 'M67', 'Mine', 'Grenade', 'Explosion']
+            is_explosion = any(keyword in killer for keyword in explosion_keywords)
+            
+            # Check for zombie deaths
+            is_zombie = killer.startswith('Zmb')
+            
+            if killer in animal_map:
+                friendly, ev_type = animal_map[killer]
+                details.update({
+                    'attacker_name': friendly,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True,
+                    'special_event': ev_type,
+                })
+            elif is_explosion:
+                ev_type = 'death_by_explosion'
+                details.update({
+                    'attacker_name': killer,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': killer,
+                    'distance': None,
+                    'kill': True,
+                    'special_event': ev_type,
+                })
+            elif is_zombie:
+                ev_type = 'death_by_zombie'
+                details.update({
+                    'attacker_name': killer,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True,
+                    'special_event': ev_type,
+                })
+            else:
+                details.update({
+                    'attacker_name': killer,
+                    'attacker_id': None,
+                    'attacker_pos': None,
+                    'weapon': None,
+                    'distance': None,
+                    'kill': True,
+                })
+            details['killer'] = killer
         
         event = PlayerEvent(
             timestamp=timestamp,
             player_name=player_name,
             player_id=player_id,
             event_type=ev_type,
+            position=position,
+            details=details
+        )
+        return HandlerResult(event=event)
+
+    def _handle_combat_log_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
+        """
+        Handle combat logging events where players disconnect while unconscious.
+        
+        This method tracks instances of potential combat logging where players
+        disconnect from the server while in an unconscious state, which may
+        indicate an attempt to avoid consequences of PvP combat.
+        
+        Args:
+            event_type: The type of event ('combat_log_unconscious')
+            match: Regex match object containing event data
+            base_date: Base date for timestamp calculation
+            raw_line: Original log line for debugging
+            
+        Returns:
+            HandlerResult containing the processed combat log event
+        """
+        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
+        position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+        
+        # Mark as combat event for tracking
+        details.update({
+            'reason': 'disconnect_while_unconscious',
+            'combat_logging': True
+        })
+        
+        event = PlayerEvent(
+            timestamp=timestamp,
+            player_name=player_name,
+            player_id=player_id,
+            event_type=event_type,
             position=position,
             details=details
         )
@@ -998,6 +1141,12 @@ class DayZADMParser:
         structure = self._safe_named_group_access(match, 'structure', '')
         tool = self._safe_named_group_access(match, 'tool', '')
         parent = self._safe_named_group_access(match, 'parent', '')
+        
+        # Special handling for builtbaseon event type
+        if event_type == 'builtbaseon':
+            action = 'Built base on'
+            structure = 'base'
+            
         details.update({
             'action': action,
             'structure': structure,
@@ -1295,12 +1444,14 @@ class DayZADMAnalyzer(FileBasedTool):
         self._ensure_cache_valid()
         return self._player_id_to_name.get(player_id, "Unknown")
         
-    def parse_log_file(self, log_file: str) -> Dict[str, Any]:
+    def parse_log_file(self, log_file: str, debug_skipped_file: Optional[str] = None, append_debug: bool = False) -> Dict[str, Any]:
         """
         Parse a DayZ ADM log file using the decoupled parser.
         
         Args:
             log_file: Path to the ADM log file
+            debug_skipped_file: Optional path to write skipped/malformed lines for debugging
+            append_debug: If True, append to debug file instead of overwriting
             
         Returns:
             Dictionary containing parsing results and statistics
@@ -1309,7 +1460,7 @@ class DayZADMAnalyzer(FileBasedTool):
         logger.info(f"Parsing ADM log file: {log_path}")
         
         # Use the decoupled parser to get events and error statistics
-        events, combat_events, parse_summary = self.parser.parse_file(log_path)
+        events, combat_events, parse_summary = self.parser.parse_file(log_path, debug_skipped_file=debug_skipped_file, append_debug=append_debug)
         
         # Store the parse summary for error reporting
         self.parse_summary = parse_summary
@@ -1434,6 +1585,49 @@ class DayZADMAnalyzer(FileBasedTool):
             self.player_sessions[event.player_id].append(session)
             del self.current_sessions[event.player_id]
     
+    def _count_unique_kills(self, combat_events: List) -> int:
+        """
+        Count unique kills by grouping rapid-fire kills to the same victim.
+        
+        This prevents counting multiple rapid-fire hits to the same victim
+        as separate kills by using a more sophisticated approach that looks
+        for distinct kill engagements separated by reasonable time gaps.
+        
+        Args:
+            combat_events: List of combat events where this player was the attacker
+            
+        Returns:
+            Number of unique kills (unique victim engagements)
+        """
+        kill_events = [e for e in combat_events if e.kill]
+        if not kill_events:
+            return 0
+        
+        # Sort by timestamp to process in chronological order
+        kill_events.sort(key=lambda x: x.timestamp)
+        
+        # Track unique kill engagements as (victim_id, engagement_start_time)
+        unique_kill_engagements = []
+        
+        for event in kill_events:
+            victim_id = event.victim_id
+            current_time = event.timestamp
+            
+            # Check if this is part of an existing engagement (within 60 seconds of a previous kill of same victim)
+            is_new_engagement = True
+            
+            for prev_victim_id, prev_time in unique_kill_engagements:
+                if prev_victim_id == victim_id:
+                    time_diff = (current_time - prev_time).total_seconds()
+                    if time_diff <= 60:  # Same engagement
+                        is_new_engagement = False
+                        break
+            
+            if is_new_engagement:
+                unique_kill_engagements.append((victim_id, current_time))
+        
+        return len(unique_kill_engagements)
+    
     def generate_player_statistics(self) -> Dict[str, Any]:
         """Generate comprehensive player statistics."""
         stats = {
@@ -1454,21 +1648,27 @@ class DayZADMAnalyzer(FileBasedTool):
             player_events = self.get_events_by_player(player_id)
             player_combat_as_victim = self.get_combat_events_by_victim(player_id)
             
-            # Count all deaths for reporting
-            deaths = len([e for e in player_events if e.event_type == 'death'])
+            # Count all deaths for reporting (includes all death types)
+            deaths = len([e for e in player_events if e.event_type in ['bledout', 'death_player', 'death_fall', 'death_by_bear', 'death_by_wolf', 'death_by_explosion', 'death_by_zombie', 'suicide']])
             # Count only deaths caused by another player for K/D
             deaths_by_player = len([e for e in player_combat_as_victim if e.kill])
             suicides = len([e for e in player_events if e.event_type == 'suicide'])
             emotes = len([e for e in player_events if e.event_type == 'emote'])
-            building_actions = len([e for e in player_events if e.event_type in ('building', 'placed', 'folded', 'packed')])
+            tripwire_hits = len([e for e in player_events if e.event_type == 'tripwire_hit'])
+            combat_logs = len([e for e in player_events if e.event_type == 'combat_log_unconscious'])
+            building_actions = len([e for e in player_events if e.event_type in ('building', 'mounted', 'unmounted', 'raisedflag', 'builtbaseon', 'dismantle', 'repaired', 'placed', 'folded', 'packed')])
             teleported_events = len([e for e in player_events if e.event_type == 'teleported'])
             deaths_by_bear = len([e for e in player_events if e.event_type == 'death_by_bear'])
             deaths_by_wolf = len([e for e in player_events if e.event_type == 'death_by_wolf'])
+            deaths_by_fall = len([e for e in player_events if e.event_type == 'death_fall'])
+            deaths_by_explosion = len([e for e in player_events if e.event_type == 'death_by_explosion'])
+            deaths_by_zombie = len([e for e in player_events if e.event_type == 'death_by_zombie'])
             
             # PvP-only combat statistics using cached lookups
             player_combat_as_attacker = self.get_combat_events_by_attacker(player_id)
             
-            kills_pvp = len([e for e in player_combat_as_attacker if e.kill])
+            # Count unique kills by grouping rapid-fire kills to the same victim
+            kills_pvp = self._count_unique_kills(player_combat_as_attacker)
             # Filter for valid PvP events (both attacker and victim must be valid player IDs)
             pvp_hits_dealt = [e for e in player_combat_as_attacker if e.victim_id and e.victim_id.strip() and e.attacker_id != e.victim_id]
             pvp_hits_taken = [e for e in player_combat_as_victim if e.attacker_id and e.attacker_id.strip() and e.attacker_id != e.victim_id]
@@ -1494,11 +1694,16 @@ class DayZADMAnalyzer(FileBasedTool):
                 'damage_taken (PvP)': damage_taken_pvp,
                 'accuracy (PvP)': (kills_pvp / max(hits_dealt_pvp, 1)) * 100 if hits_dealt_pvp > 0 else 0,
                 'emotes': emotes,
+                'tripwire_hits': tripwire_hits,
+                'combat_logs': combat_logs,
                 'building_actions': building_actions,
                 'teleported_events': teleported_events,
                 'avg_damage_per_hit (PvP)': damage_dealt_pvp / max(hits_dealt_pvp, 1) if hits_dealt_pvp > 0 else 0,
                 'deaths_by_bear': deaths_by_bear,
-                'deaths_by_wolf': deaths_by_wolf
+                'deaths_by_wolf': deaths_by_wolf,
+                'deaths_by_fall': deaths_by_fall,
+                'deaths_by_explosion': deaths_by_explosion,
+                'deaths_by_zombie': deaths_by_zombie
             }
         
         return stats
@@ -1671,6 +1876,15 @@ class DayZADMAnalyzer(FileBasedTool):
         """
         Export analysis results to CSV files.
         
+        Creates the following CSV exports:
+        - Player statistics: Aggregated player metrics with special events
+        - Combat events: PvP hit/kill events with details
+        - Player state events: Connection, consciousness, emotes, respawns, etc.
+        - Environmental combat events: Environmental hits, explosions, deaths, combat logging
+        - Teleportation events: Player teleportation with coordinates and reasons
+        - Building events: Construction, mounting, dismantling activities
+        - Player sessions: Connection sessions with duration and distance
+        
         Args:
             output_prefix: Prefix for output filenames
             
@@ -1701,7 +1915,7 @@ class DayZADMAnalyzer(FileBasedTool):
                     'Avg Session Time (Minutes)', 'Distance Traveled', 'Deaths', 'Suicides',
                     'Kills (PvP)', 'K/D Ratio (PvP)', 'Hits Dealt (PvP)', 'Hits Taken (PvP)', 'Damage Dealt (PvP)',
                     'Damage Taken (PvP)', 'Avg Damage Per Hit (PvP)', 'Accuracy % (PvP)', 'Emotes', 'Building Actions',
-                    'Teleported Events', 'Deaths by Bear', 'Deaths by Wolf'
+                    'Teleported Events', 'Deaths by Bear', 'Deaths by Wolf', 'Deaths by Fall', 'Deaths by Explosion', 'Deaths by Zombies'
                 ]
                 # Add special event columns
                 columns += [f"{name.replace('_', ' ').title()} Events" for name in self._special_event_names]
@@ -1717,7 +1931,8 @@ class DayZADMAnalyzer(FileBasedTool):
                         round(stats['damage_dealt (PvP)'], 2), round(stats['damage_taken (PvP)'], 2),
                         round(stats['avg_damage_per_hit (PvP)'], 2), round(stats['accuracy (PvP)'], 2), stats['emotes'], stats['building_actions'],
                         stats['teleported_events'], stats.get('deaths_by_bear', 0),
-                        stats.get('deaths_by_wolf', 0)
+                        stats.get('deaths_by_wolf', 0), stats.get('deaths_by_fall', 0),
+                        stats.get('deaths_by_explosion', 0), stats.get('deaths_by_zombie', 0)
                     ]
                     # Add special event counts
                     for name in self._special_event_names:
@@ -1780,8 +1995,132 @@ class DayZADMAnalyzer(FileBasedTool):
             created_files.append(teleport_csv)
             logger.info(f"Teleportation events exported to: {teleport_csv}")
 
-        # Building activities report (includes building, packed, placed, folded)
-        building_events = [e for e in self.events if e.event_type in ('building', 'packed', 'placed', 'folded')]
+        # Player state events - all player activity events
+        player_state_event_types = {
+            'connection', 'disconnection', 'unconscious', 'conscious', 'respawn', 'bledout', 
+            'emote', 'tripwire_hit', 'player_position',
+            # Player activity events
+            'building', 'dismantle', 'placed', 'raisedflag', 'suicide', 'teleported',
+            # Combat-related player events  
+            'death_by_explosion', 'hit', 'kill',
+            # Environmental damage events
+            'env_hit', 'env_hit_simple', 'explosion_hit'
+        }
+        player_state_events = [e for e in self.events if e.event_type in player_state_event_types]
+        if player_state_events:
+            player_state_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_player_state_events_{timestamp}.csv")
+            with open(player_state_csv, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Timestamp', 'Player Name', 'Player ID', 'Event Type', 'X', 'Y', 'Z', 'Details'
+                ])
+                for event in player_state_events:
+                    details = event.details or {}
+                    # Extract relevant details based on event type
+                    details_str = ''
+                    if event.event_type == 'emote':
+                        emote = details.get('emote', '')
+                        emote_item = details.get('emote_item', '')
+                        details_str = f"Emote: {emote}" + (f" with {emote_item}" if emote_item else "")
+                    elif event.event_type == 'tripwire_hit':
+                        damage = details.get('damage', '')
+                        hp = details.get('hp', '')
+                        hit_location = details.get('hit_location', '')
+                        details_str = f"Damage: {damage}, HP: {hp}, Hit Location: {hit_location}"
+                    elif event.event_type in ('unconscious', 'conscious'):
+                        details_str = f"State change: {event.event_type}"
+                    elif event.event_type in ('connection', 'disconnection'):
+                        details_str = f"Session: {event.event_type}"
+                    elif event.event_type in ('respawn', 'bledout'):
+                        details_str = f"Death event: {event.event_type}"
+                    
+                    writer.writerow([
+                        event.timestamp.isoformat(),
+                        event.player_name,
+                        event.player_id,
+                        event.event_type,
+                        event.position[0] if event.position else '',
+                        event.position[1] if event.position else '',
+                        event.position[2] if event.position else '',
+                        details_str
+                    ])
+            created_files.append(player_state_csv)
+            logger.info(f"Player state events exported to: {player_state_csv}")
+
+        # Environmental combat events (env_hit, env_hit_simple, explosion_hit, death_player, death_fall, death_by_explosion, death_by_zombie, combat_log_unconscious)
+        env_combat_events = [e for e in self.events if e.event_type in ('env_hit', 'env_hit_simple', 'explosion_hit', 'death_player', 'death_fall', 'death_by_explosion', 'death_by_zombie', 'combat_log_unconscious')]
+        if env_combat_events:
+            env_combat_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_environmental_combat_events_{timestamp}.csv")
+            with open(env_combat_csv, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    'Timestamp', 'Player Name', 'Player ID', 'Event Type', 'Attacker/Source', 'Weapon/Method', 
+                    'Damage', 'HP', 'X', 'Y', 'Z', 'Details'
+                ])
+                for event in env_combat_events:
+                    details = event.details or {}
+                    # Extract relevant details based on event type
+                    attacker = ''
+                    weapon = ''
+                    damage = ''
+                    hp = ''
+                    details_str = ''
+                    
+                    if event.event_type == 'env_hit':
+                        attacker = details.get('attacker_name', '')
+                        weapon = details.get('weapon', '')
+                        hp = details.get('victim_hp', '')
+                        details_str = f"Environmental hit by {attacker}"
+                    elif event.event_type == 'env_hit_simple':
+                        attacker = details.get('attacker_name', '')
+                        hp = details.get('victim_hp', '')
+                        weapon = details.get('weapon', attacker)  # Use attacker as weapon for simple form
+                        details_str = f"Environmental hit by {attacker}"
+                    elif event.event_type == 'explosion_hit':
+                        explosion_type = details.get('weapon', '')  # Explosion handler stores it as 'weapon'
+                        hp = details.get('victim_hp', '')
+                        attacker = 'Explosion'
+                        weapon = explosion_type
+                        details_str = f"Explosion hit: {explosion_type}"
+                    elif event.event_type == 'death_player':
+                        killer = details.get('killer', '')
+                        attacker = killer
+                        details_str = f"Killed by {killer}"
+                    elif event.event_type == 'death_fall':
+                        attacker = 'Fall Damage'
+                        weapon = 'FallDamageHealth'
+                        details_str = "Death by fall damage"
+                    elif event.event_type == 'death_by_explosion':
+                        killer = details.get('killer', '')
+                        attacker = killer
+                        weapon = killer
+                        details_str = f"Death by explosion: {killer}"
+                    elif event.event_type == 'death_by_zombie':
+                        killer = details.get('killer', '')
+                        attacker = killer
+                        details_str = f"Death by zombie: {killer}"
+                    elif event.event_type == 'combat_log_unconscious':
+                        details_str = "Disconnected while unconscious (combat logging)"
+                    
+                    writer.writerow([
+                        event.timestamp.isoformat(),
+                        event.player_name,
+                        event.player_id,
+                        event.event_type,
+                        attacker,
+                        weapon,
+                        damage,
+                        hp,
+                        event.position[0] if event.position else '',
+                        event.position[1] if event.position else '',
+                        event.position[2] if event.position else '',
+                        details_str
+                    ])
+            created_files.append(env_combat_csv)
+            logger.info(f"Environmental combat events exported to: {env_combat_csv}")
+
+        # Building activities report (includes building, mounted, unmounted, raisedflag, builtbaseon, dismantle, repaired, packed, placed, folded)
+        building_events = [e for e in self.events if e.event_type in ('building', 'mounted', 'unmounted', 'raisedflag', 'builtbaseon', 'dismantle', 'repaired', 'packed', 'placed', 'folded')]
         if building_events:
             building_csv = self.resolve_path(f"{self.output_dir}/{output_prefix}_building_events_{timestamp}.csv")
             with open(building_csv, 'w', newline='', encoding='utf-8') as f:
@@ -1899,6 +2238,9 @@ class DayZADMAnalyzer(FileBasedTool):
         # Get error reporting for data quality assessment
         error_report = self.get_parse_error_report()
         
+        # Count building events directly from the events list for accuracy
+        building_events_count = len([e for e in self.events if e.event_type in ('building', 'mounted', 'unmounted', 'raisedflag', 'builtbaseon', 'dismantle', 'repaired', 'packed', 'placed', 'folded')])
+        
         results = {
             'parse_statistics': parse_stats,
             'player_statistics': player_stats,
@@ -1911,6 +2253,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 'total_events_parsed': len(self.events),
                 'unique_players': len(self.player_sessions),
                 'total_combat_events': len(self.combat_events),
+                'building_events': building_events_count,
                 'data_quality': {
                     'error_rate': error_report['error_rate'],
                     'malformed_lines': error_report['malformed_lines']
@@ -1961,6 +2304,12 @@ Examples:
         help='Prefix for output files (default: adm_analysis)'
     )
 
+    parser.add_argument(
+        '--debug-skipped',
+        action='store_true',
+        help='Write skipped/malformed log lines to a separate debug file for analysis'
+    )
+
     # Add standard DayZ tool arguments
     DayZADMAnalyzer.add_standard_arguments(parser)
 
@@ -2000,9 +2349,19 @@ Examples:
         analyzer.player_sessions.clear()
         analyzer.current_sessions.clear()
 
+        # Setup debug file path if debug-skipped is enabled
+        debug_skipped_file = None
+        if args.debug_skipped:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            output_dir = analyzer.output_dir if hasattr(analyzer, 'output_dir') else '.'
+            debug_skipped_file = analyzer.resolve_path(f"{output_dir}/{args.output_prefix}_skipped_lines_{timestamp}.txt")
+            logger.info(f"Debug mode enabled - skipped lines will be written to: {debug_skipped_file}")
+
         # Aggregate all log files before running analysis
-        for log_file in log_files:
-            analyzer.parse_log_file(log_file)
+        for i, log_file in enumerate(log_files):
+            # For multiple files, append to debug file after the first one
+            append_debug = (i > 0) if debug_skipped_file else False
+            analyzer.parse_log_file(log_file, debug_skipped_file=debug_skipped_file, append_debug=append_debug)
 
         # Now run analysis on the aggregated data
         results = analyzer.run(
@@ -2021,15 +2380,48 @@ Examples:
 
         md_lines = []
         summary = results['summary']
-        md_lines.append(f"**DayZ ADM Log Analysis Summary (Aggregated)**\n")
-        md_lines.append(f"- Log File(s): {summary['log_file']}")
-        md_lines.append(f"- Analysis Time: {summary['analysis_timestamp']}")
-        md_lines.append(f"- Time Range: {summary['analysis_time_range']['start']} to {summary['analysis_time_range']['end']}")
-        md_lines.append(f"- Total Events Parsed: {summary['total_events_parsed']:,}")
-        md_lines.append(f"- Unique Players: {summary['unique_players']}")
-        md_lines.append(f"- Combat Events: {summary['total_combat_events']}")
         
-        # Add teleportation event summary
+        # Format timestamps for better readability
+        analysis_time = datetime.fromisoformat(summary['analysis_timestamp']).strftime("%d-%m-%Y %H:%M:%S")
+        start_time = datetime.fromisoformat(summary['analysis_time_range']['start']).strftime("%d-%m-%Y %H:%M:%S") if summary['analysis_time_range']['start'] else 'Unknown'
+        end_time = datetime.fromisoformat(summary['analysis_time_range']['end']).strftime("%d-%m-%Y %H:%M:%S") if summary['analysis_time_range']['end'] else 'Unknown'
+        
+        md_lines.append(f"**DayZ ADM Log Analysis Summary (Aggregated)**\n")
+        md_lines.append(f"## Overview")
+        md_lines.append(f"- Log File(s): {summary['log_file']}")
+        md_lines.append(f"- Analysis Time: {analysis_time}")
+        md_lines.append(f"- Time Range: {start_time} to {end_time}")
+        md_lines.append(f"- Total Events Parsed: {format_european_number(summary['total_events_parsed'])}")
+        md_lines.append(f"- Unique Players: {format_european_number(summary['unique_players'])}")
+        
+        # Calculate total distance traveled by all players
+        total_distance_all_players = 0
+        if player_stats.get('players'):
+            for player_id, stats in player_stats['players'].items():
+                total_distance_all_players += stats.get('total_distance_traveled', 0)
+        
+        # Convert meters to kilometers
+        total_distance_km = total_distance_all_players / 1000
+        
+        # Count special events globally
+        special_event_counts_global = {name: 0 for name in analyzer._special_event_names}
+        for e in analyzer.events:
+            if e.event_type in analyzer._special_event_names:
+                special_event_counts_global[e.event_type] += 1
+        
+        md_lines.append(f"\n## Server Activity Statistics")
+        md_lines.append(f"- Total Distance Traveled: {format_european_number(round(total_distance_km, 1))} km")
+        md_lines.append(f"- Building Events: {format_european_number(summary['building_events'])}")
+        md_lines.append(f"- Combat Events: {format_european_number(summary['total_combat_events'])}")
+        if analyzer._special_event_names:
+            total_special_events = sum(special_event_counts_global.values())
+            if total_special_events > 0:
+                # Find the most common special event for summary
+                most_common_event = max(special_event_counts_global.items(), key=lambda x: x[1])
+                if most_common_event[1] > 0:
+                    md_lines.append(f"- Special Events: {format_european_number(most_common_event[1])} ({most_common_event[0].replace('_', ' ').title()})")
+        
+        # Add teleportation and combat logging event summary
         teleport_events = [e for e in analyzer.events if e.event_type == 'teleported']
         teleported_players = len([p for p in player_stats.get('players', {}) if player_stats['players'][p].get('teleported_events', 0) > 0])
         restricted_violations = len([e for e in teleport_events if e.details and 'RestrictedArea' in (e.details.get('reason', ''))])
@@ -2038,12 +2430,16 @@ Examples:
             total_distance = sum([e.details.get('teleport_distance', 0) for e in teleport_events if e.details])
             avg_distance = round(total_distance / len(teleport_events), 2)
         
-        md_lines.append(f"- Teleportation Events: {len(teleport_events)}")
-        md_lines.append(f"- Teleported Players: {teleported_players}")
-        md_lines.append(f"- Restricted Area Violations: {restricted_violations}")
-        md_lines.append(f"- Average Teleport Distance: {avg_distance} meters")
-
-
+        combat_log_events = [e for e in analyzer.events if e.event_type == 'combat_log_unconscious']
+        total_combat_logs = sum(stats.get('combat_logs', 0) for stats in player_stats['players'].values())
+        combat_log_players = len([p for p in player_stats.get('players', {}) if player_stats['players'][p].get('combat_logs', 0) > 0])
+        
+        md_lines.append(f"\n## Administrative Events")
+        md_lines.append(f"- Teleported Players: {format_european_number(teleported_players)}")
+        md_lines.append(f"- Restricted Area Violations: {format_european_number(restricted_violations)}")
+        md_lines.append(f"- Average Teleport Distance: {format_european_number(avg_distance, 2)} meters")
+        md_lines.append(f"- Combat Logging Events: {format_european_number(total_combat_logs)}")
+        md_lines.append(f"- Players with Combat Logs: {format_european_number(combat_log_players)}")
 
         # --- Config-driven special events for Markdown summary ---
         # Count special events globally
@@ -2052,6 +2448,8 @@ Examples:
             if e.event_type in analyzer._special_event_names:
                 special_event_counts_global[e.event_type] += 1
 
+        md_lines.append(f"\n## Player Activity Rankings")
+
         # Top 10 Most Active Players (by playtime)
         if player_stats.get('players'):
             sorted_players = sorted(
@@ -2059,22 +2457,13 @@ Examples:
                 key=lambda x: x[1]['total_playtime_hours'],
                 reverse=True
             )
-            md_lines.append(f"\n**Top 10 Most Active Players (by playtime):**")
+            md_lines.append(f"\n### Top 10 Most Active Players (by playtime)")
             for player_id, stats in sorted_players[:10]:
-                md_lines.append(f"* {stats['name']}: {stats['total_playtime_hours']:.1f}h, {stats.get('kills (PvP)', 0)} kills (PvP), {stats.get('deaths', 0)} deaths, {stats.get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
-
-        # Special event counts
-        if analyzer._special_event_names:
-            md_lines.append(f"\n**Special Events:**")
-            for name in analyzer._special_event_names:
-                md_lines.append(f"* {name.replace('_', ' ').title()}: {special_event_counts_global[name]} occurrences")
-
-        # Deaths by Bear and Wolf (special events)
-        total_bear = sum(stats.get('deaths_by_bear', 0) for stats in player_stats['players'].values())
-        total_wolf = sum(stats.get('deaths_by_wolf', 0) for stats in player_stats['players'].values())
-        md_lines.append(f"\n**Special Animal Deaths:**")
-        md_lines.append(f"* Deaths by Bear: {total_bear}")
-        md_lines.append(f"* Deaths by Wolf: {total_wolf}")
+                playtime = format_european_number(stats['total_playtime_hours'], 1)
+                kills = format_european_number(stats.get('kills (PvP)', 0))
+                deaths = format_european_number(stats.get('deaths', 0))
+                kd_ratio = format_european_number(stats.get('kd_ratio (PvP)', 0), 2)
+                md_lines.append(f"* {stats['name']}: {playtime}h, {kills} kills (PvP), {deaths} deaths, {kd_ratio} K/D (PvP)")
 
         # Top 10 Most Active Builders
         sorted_builders = sorted(
@@ -2082,66 +2471,114 @@ Examples:
             key=lambda x: x[1].get('building_actions', 0),
             reverse=True
         )
-        md_lines.append(f"\n**Top 10 Most Active Builders:**")
+        md_lines.append(f"\n### Top 10 Most Active Builders")
         for player_id, stats in sorted_builders[:10]:
-            md_lines.append(f"* {stats['name']}: {stats.get('building_actions', 0)} building actions")
+            building_actions = format_european_number(stats.get('building_actions', 0))
+            md_lines.append(f"* {stats['name']}: {building_actions} building actions")
 
-        # Most weapon used (exclude Melee)
+        md_lines.append(f"\n## Combat Statistics")
+
+        # Top 5 Killers (PvP)
+        if player_stats.get('players'):
+            killer_players = [(pid, stats) for pid, stats in player_stats['players'].items() if stats.get('kills (PvP)', 0) > 0]
+            top_killers = sorted(killer_players, key=lambda x: x[1].get('kills (PvP)', 0), reverse=True)[:5]
+            
+            if top_killers:
+                md_lines.append(f"\n### Top 5 Killers (PvP)")
+                for pid, stats in top_killers:
+                    kills = format_european_number(stats.get('kills (PvP)', 0))
+                    kd_ratio = format_european_number(stats.get('kd_ratio (PvP)', 0), 2)
+                    md_lines.append(f"* {stats['name']}: {kills} kills (PvP), {kd_ratio} K/D (PvP)")
+
+        # Top Damage Dealer (PvP)
+        if player_stats.get('players'):
+            top_damage = max(player_stats['players'].items(), key=lambda x: x[1].get('damage_dealt (PvP)', 0), default=None)
+            if top_damage and top_damage[1].get('damage_dealt (PvP)', 0) > 0:
+                damage = format_european_number(top_damage[1].get('damage_dealt (PvP)', 0), 1)
+                md_lines.append(f"\n### Top Damage Dealer (PvP)")
+                md_lines.append(f"* {top_damage[1]['name']}: {damage} total damage (PvP)")
+
+        # Top K/D Ratio (PvP)
+        if player_stats.get('players'):
+            kd_players = [(pid, stats) for pid, stats in player_stats['players'].items() if stats.get('kd_ratio (PvP)', 0) > 0]
+            if kd_players:
+                top_kd = max(kd_players, key=lambda x: x[1].get('kd_ratio (PvP)', 0))
+                kd_ratio = format_european_number(top_kd[1].get('kd_ratio (PvP)', 0), 2)
+                md_lines.append(f"\n### Top K/D Ratio (PvP)")
+                md_lines.append(f"* {top_kd[1]['name']}: {kd_ratio} K/D (PvP)")
+
+        # Most Used Weapons (excluding Melee)
         combat_stats = results['combat_statistics']
         if isinstance(combat_stats, dict) and 'weapon_usage' in combat_stats:
             weapon_usage = combat_stats['weapon_usage']
             filtered_weapons = [(w, c) for w, c in weapon_usage.items() if w and 'melee' not in w.lower() and w.lower() != '']
             filtered_weapons.sort(key=lambda x: x[1], reverse=True)
-            md_lines.append(f"\n**Most Weapon Used (excluding Melee):**")
+            md_lines.append(f"\n### Most Used Weapons (excluding Melee)")
             for weapon, count in filtered_weapons[:5]:
-                md_lines.append(f"* {weapon}: {count} hits")
+                formatted_count = format_european_number(count)
+                md_lines.append(f"* {weapon}: {formatted_count} hits")
 
-        # Top Killer
-        if player_stats.get('players'):
-            top_killer = max(player_stats['players'].items(), key=lambda x: x[1].get('kills (PvP)', 0), default=None)
-            if top_killer and top_killer[1].get('kills (PvP)', 0) > 0:
-                md_lines.append(f"\n**Top Killer (PvP):**")
-                md_lines.append(f"* {top_killer[1]['name']}: {top_killer[1].get('kills (PvP)', 0)} kills (PvP), {top_killer[1].get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
+        md_lines.append(f"\n## Environmental Events")
 
-        # Top Damage
+        # Special Events
+        if analyzer._special_event_names:
+            md_lines.append(f"\n### Special Events")
+            for name in analyzer._special_event_names:
+                count = format_european_number(special_event_counts_global[name])
+                md_lines.append(f"* {name.replace('_', ' ').title()}: {count} occurrences")
 
-        if player_stats.get('players'):
-            top_damage = max(player_stats['players'].items(), key=lambda x: x[1].get('damage_dealt (PvP)', 0), default=None)
-            if top_damage and top_damage[1].get('damage_dealt (PvP)', 0) > 0:
-                md_lines.append(f"\n**Top Damage (PvP):**")
-                md_lines.append(f"* {top_damage[1]['name']}: {top_damage[1].get('damage_dealt (PvP)', 0):.1f} total damage (PvP)")
+        # Environmental Deaths
+        total_bear = sum(stats.get('deaths_by_bear', 0) for stats in player_stats['players'].values())
+        total_wolf = sum(stats.get('deaths_by_wolf', 0) for stats in player_stats['players'].values())
+        total_fall = sum(stats.get('deaths_by_fall', 0) for stats in player_stats['players'].values())
+        total_explosion = sum(stats.get('deaths_by_explosion', 0) for stats in player_stats['players'].values())
+        total_zombie = sum(stats.get('deaths_by_zombie', 0) for stats in player_stats['players'].values())
+        md_lines.append(f"\n### Environmental Deaths")
+        md_lines.append(f"* Deaths by Fall: {format_european_number(total_fall)}")
+        md_lines.append(f"* Deaths by Explosion: {format_european_number(total_explosion)}")
+        md_lines.append(f"* Deaths by Zombies: {format_european_number(total_zombie)}")
+        md_lines.append(f"* Deaths by Bear: {format_european_number(total_bear)}")
+        md_lines.append(f"* Deaths by Wolf: {format_european_number(total_wolf)}")
 
-        # Top K/D Ratio (PvP)
-        if player_stats.get('players'):
-            # Consider all players, even those with 0 deaths (K/D = kills / max(deaths, 1))
-            kd_players = [(pid, stats) for pid, stats in player_stats['players'].items() if stats.get('kd_ratio (PvP)', 0) > 0]
-            if kd_players:
-                top_kd = max(kd_players, key=lambda x: x[1].get('kd_ratio (PvP)', 0))
-                md_lines.append(f"\n**Top K/D Ratio (PvP):**")
-                md_lines.append(f"* {top_kd[1]['name']}: {top_kd[1].get('kd_ratio (PvP)', 0):.2f} K/D (PvP)")
+        # Combat Logging Events
+        if combat_log_events:
+            md_lines.append(f"\n### Combat Logging Events")
+            for event in combat_log_events:
+                timestamp_str = event.timestamp.strftime('%d-%m-%Y %H:%M:%S') if event.timestamp else 'Unknown'
+                md_lines.append(f"* {timestamp_str}: Player \"{event.player_name}\" disconnected while unconscious")
+
+        md_lines.append(f"\n## Security & Anomalies")
 
         # Suspicious/Anomalous Events
         anomalies = results.get('anomalies', {})
         if anomalies:
-            md_lines.append(f"\n**Suspicious/Anomalous Events:**")
+            md_lines.append(f"\n### Suspicious/Anomalous Events")
             # Rapid Reconnections
             rapid_reconnections = anomalies.get('rapid_reconnections', [])
             if rapid_reconnections:
                 md_lines.append(f"* Rapid Reconnections:")
                 for entry in rapid_reconnections:
-                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {entry['rapid_reconnects']} rapid reconnects in {entry['total_sessions']} sessions")
+                    rapid_reconnects = format_european_number(entry['rapid_reconnects'])
+                    total_sessions = format_european_number(entry['total_sessions'])
+                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {rapid_reconnects} rapid reconnects in {total_sessions} sessions")
             # High Damage Dealers
             high_damage_dealers = anomalies.get('high_damage_dealers', [])
             if high_damage_dealers:
                 md_lines.append(f"* High Damage Dealers:")
                 for entry in high_damage_dealers:
-                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {entry['average_damage']:.2f} avg damage over {entry['total_hits']} hits")
+                    avg_damage = format_european_number(entry['average_damage'], 2)
+                    total_hits = format_european_number(entry['total_hits'])
+                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {avg_damage} avg damage over {total_hits} hits")
 
         # Write Markdown report
         with open(md_report_path, 'w', encoding='utf-8') as f:
             for line in md_lines:
                 f.write(line + '\n')
         print(f"\nMarkdown summary exported to: {md_report_path}") 
+
+        # Report debug file location if it was created
+        if debug_skipped_file and Path(debug_skipped_file).exists():
+            print(f"Debug file with skipped lines: {debug_skipped_file}")
 
         print("\nAnalysis completed successfully!")
 
