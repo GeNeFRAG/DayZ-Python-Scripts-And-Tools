@@ -1879,83 +1879,8 @@ class DayZADMAnalyzer(FileBasedTool):
     
     def detect_anomalies(self) -> Dict[str, Any]:
         """Detect potentially suspicious or anomalous behavior."""
-        anomalies = {
-            'excessive_suicides': [],
-            'rapid_reconnections': [],
-            'suspicious_movement': [],
-            'stat_padding_suspects': [],
-            'frequent_teleports': []
-        }
-        
-        # Excessive suicides (more than 5 in a session)
-        for player_id, sessions in self.player_sessions.items():
-            for session in sessions:
-                if not session.duration:
-                    continue
-                    
-                # Use cached lookup and filter by session time
-                all_player_events = self.get_events_by_player(player_id)
-                player_events = [e for e in all_player_events
-                               if session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
-                
-                suicides = len([e for e in player_events if e.event_type == 'suicide'])
-                session_hours = session.duration.total_seconds() / 3600
-                
-                if suicides > 5 or (session_hours > 0 and suicides / session_hours > 3):
-                    anomalies['excessive_suicides'].append({
-                        'player_name': session.player_name,
-                        'player_id': player_id,
-                        'suicides': suicides,
-                        'session_duration_hours': session_hours
-                    })
-        
-        # Rapid reconnections (less than 30 seconds between disconnect and reconnect)
-        for player_id, sessions in self.player_sessions.items():
-            if len(sessions) < 2:
-                continue
-                
-            sorted_sessions = sorted(sessions, key=lambda s: s.connect_time)
-            rapid_reconnects = 0
-            
-            for i in range(1, len(sorted_sessions)):
-                prev_session = sorted_sessions[i-1]
-                curr_session = sorted_sessions[i]
-                
-                if prev_session.disconnect_time:
-                    gap = curr_session.connect_time - prev_session.disconnect_time
-                    if gap.total_seconds() < 30:
-                        rapid_reconnects += 1
-            
-            if rapid_reconnects > 3:
-                anomalies['rapid_reconnections'].append({
-                    'player_name': sorted_sessions[0].player_name,
-                    'player_id': player_id,
-                    'rapid_reconnects': rapid_reconnects,
-                    'total_sessions': len(sessions)
-                })
-        
-        # Frequent teleportations (more than 3 teleports per session)
-        for player_id, sessions in self.player_sessions.items():
-            for session in sessions:
-                if not session.duration:
-                    continue
-                    
-                # Use cached lookup and filter by session time
-                all_player_events = self.get_events_by_player(player_id)
-                player_events = [e for e in all_player_events
-                               if session.connect_time <= e.timestamp <= (session.disconnect_time or datetime.now())]
-                
-                teleports = len([e for e in player_events if e.event_type == 'teleported'])
-                session_hours = session.duration.total_seconds() / 3600
-                
-                if teleports > 3 or (session_hours > 0 and teleports / session_hours > 2):
-                    anomalies['frequent_teleports'].append({
-                        'player_name': session.player_name,
-                        'player_id': player_id,
-                        'teleports': teleports,
-                        'session_duration_hours': session_hours
-                    })
-        
+        # Placeholder for future anomaly detection implementations
+        anomalies = {}
         return anomalies
     
     def export_to_csv(self, output_prefix: str) -> List[str]:
@@ -2641,18 +2566,7 @@ Examples:
         md_lines.append(f"\n## Security & Anomalies")
 
         # Suspicious/Anomalous Events
-        anomalies = results.get('anomalies', {})
-        if anomalies:
-            md_lines.append(f"\n### Suspicious/Anomalous Events")
-            # Rapid Reconnections
-            rapid_reconnections = anomalies.get('rapid_reconnections', [])
-            if rapid_reconnections:
-                md_lines.append(f"* Rapid Reconnections:")
-                for entry in rapid_reconnections:
-                    rapid_reconnects = format_european_number(entry['rapid_reconnects'])
-                    total_sessions = format_european_number(entry['total_sessions'])
-                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {rapid_reconnects} rapid reconnects in {total_sessions} sessions")
-
+        # Placeholder for future anomaly detection implementations
 
         # Banned Connection Attempts
         if banned_connection_events:
