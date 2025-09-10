@@ -175,6 +175,7 @@ class ParseSummary:
     malformed_samples: List[str] = None
     connections: int = 0
     disconnections: int = 0
+    banned_connections: int = 0
     combat_events: int = 0
     deaths: int = 0
     building_events: int = 0
@@ -193,6 +194,7 @@ class HandlerResult:
     """Result carrier for event handler functions."""
     event: Optional[PlayerEvent] = None
     combat_events: List[CombatEvent] = None
+    handled: bool = True  # True if line was successfully processed, even if no event created
     
     def __post_init__(self):
         if self.combat_events is None:
@@ -229,6 +231,7 @@ class DayZADMParser:
         """Initialize the parser with configuration."""
         self.config = config or {}
         self.last_timestamp = None  # Track last timestamp for midnight rollover detection
+        self._last_events = []  # Track recent events for death stats association
         
         # Cache special event names to avoid repeated list creation
         special_events_cfg = self.config.get('special_events', {})
@@ -247,11 +250,13 @@ class DayZADMParser:
             # --- Connection/Disconnection Events ---
             'connection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*is connected'),
             'disconnection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*has been disconnected'),
+            'banned_connection_attempt': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=Unknown\)\s*has been disconnected'),
 
             # --- Player State/Status Events ---
             'unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is unconscious'),
             'conscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*regained consciousness'),
             'suicide': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)(?:\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>)?\)\s*committed suicide'),
+            'death_stats': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*died\.\s*Stats>\s*Water:\s*(?P<water>[0-9.]+)\s*Energy:\s*(?P<energy>[0-9.]+)\s*Bleed sources:\s*(?P<bleed_sources>\d+)'),
             'bledout': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*bled out'),
             'respawn': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is choosing to respawn'),
             'emote': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*performed (?P<emote>[^\s]+)(?:\s+with\s+(?P<emote_item>[^\s]+))?'),
@@ -284,7 +289,11 @@ class DayZADMParser:
 
             # --- Fallback/Player Position ---
             # Match simple position lines that end after the position coordinates
-            'player_position': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*$')
+            'player_position': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*$'),
+            
+            # --- Player List Entry (Informational) ---
+            # Match player list entries with dead players - these don't add information to kill events
+            'player_list_dead': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)[\s\)]*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)?\s*$')
         }
 
         # --- Special/Other Events from config ---
@@ -361,12 +370,20 @@ class DayZADMParser:
                     events.append(parse_result.event)
                     summary.parsed_events += 1
                     
+                    # Track recent events for death stats association
+                    self._last_events.append(parse_result.event)
+                    # Keep only last 20 events to prevent memory bloat
+                    if len(self._last_events) > 20:
+                        self._last_events = self._last_events[-10:]
+                    
                     # Update event type counters
                     event_type = parse_result.event.event_type
                     if event_type == 'connection':
                         summary.connections += 1
                     elif event_type == 'disconnection':
                         summary.disconnections += 1
+                    elif event_type == 'banned_connection_attempt':
+                        summary.banned_connections += 1
                     elif event_type in ['building', 'mounted', 'unmounted', 'placed', 'folded', 'packed', 'repaired', 'raisedflag', 'builtbaseon', 'dismantle']:
                         summary.building_events += 1
                     elif event_type == 'emote':
@@ -444,7 +461,10 @@ class DayZADMParser:
                 if match:
                     logger.debug(f"MATCHED EVENT TYPE: {event_type}")
                     event = self._create_event_from_match(event_type, match, base_date, line)
-                    if event:
+                    if event == "HANDLED_NO_EVENT":
+                        # Line was successfully handled but no event created (e.g., informational)
+                        return ParseResult(event=None, line_number=line_number, raw_line=line)
+                    elif event:
                         return ParseResult(event=event, line_number=line_number, raw_line=line)
                     else:
                         return ParseResult(
@@ -566,10 +586,13 @@ class DayZADMParser:
         handlers = {
             'connection': self._handle_connection_event,
             'disconnection': self._handle_disconnection_event,
+            'banned_connection_attempt': self._handle_banned_connection_event,
             'player_position': self._handle_position_event,
+            'player_list_dead': self._handle_player_list_dead_event,
             'unconscious': self._handle_state_event,
             'conscious': self._handle_state_event,
             'suicide': self._handle_state_event,
+            'death_stats': self._handle_death_stats_event,
             'bledout': self._handle_state_event,
             'respawn': self._handle_state_event,
             'emote': self._handle_state_event,
@@ -622,6 +645,28 @@ class DayZADMParser:
         """Handle disconnection events."""
         return self._handle_connection_event(event_type, match, base_date, raw_line)
 
+    def _handle_banned_connection_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
+        """Handle banned player connection attempts (id=Unknown disconnections)."""
+        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
+        
+        # Override the player_id to be "Unknown" and add ban-related details
+        player_id = "Unknown"
+        details.update({
+            'reason': 'banned_player_attempt',
+            'banned': True,
+            'administrative_action': True
+        })
+        
+        event = PlayerEvent(
+            timestamp=timestamp,
+            player_name=player_name,
+            player_id=player_id,
+            event_type=event_type,
+            position=None,  # No position data for banned connection attempts
+            details=details
+        )
+        return HandlerResult(event=event)
+
     def _handle_position_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle player position events."""
         timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
@@ -636,6 +681,14 @@ class DayZADMParser:
             details=details
         )
         return HandlerResult(event=event)
+
+    def _handle_player_list_dead_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
+        """Handle player list entries for dead players - these are informational only."""
+        # These events are just player list snapshots showing dead players
+        # They don't provide new information beyond the original kill/suicide events
+        # We track them but don't create events to avoid duplication
+        logger.debug(f"Player list dead entry (informational): {raw_line}")
+        return HandlerResult(event=None)  # No event created
 
     def _handle_state_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle state events (unconscious, conscious, suicide, emote)."""
@@ -663,6 +716,50 @@ class DayZADMParser:
                 'attacker': 'TripwireTrap'
             })
         
+        event = PlayerEvent(
+            timestamp=timestamp,
+            player_name=player_name,
+            player_id=player_id,
+            event_type=event_type,
+            position=position,
+            details=details
+        )
+        return HandlerResult(event=event)
+
+    def _handle_death_stats_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
+        """Handle death statistics events that follow suicide events."""
+        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
+        position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+        
+        # Extract death statistics data
+        water = self._safe_named_group_access(match, 'water', '0')
+        energy = self._safe_named_group_access(match, 'energy', '0') 
+        bleed_sources = self._safe_named_group_access(match, 'bleed_sources', '0')
+        
+        details.update({
+            'water': water,
+            'energy': energy,
+            'bleed_sources': bleed_sources
+        })
+        
+        # Look for a corresponding suicide event within the last few events
+        # This will associate the death stats with the suicide event
+        if hasattr(self, '_last_events') and self._last_events:
+            for recent_event in reversed(self._last_events[-10:]):  # Check last 10 events
+                if (recent_event.player_id == player_id and 
+                    recent_event.event_type == 'suicide' and
+                    abs((timestamp - recent_event.timestamp).total_seconds()) < 60):  # Within 1 minute
+                    # Add death stats to the suicide event details
+                    recent_event.details.update({
+                        'death_stats': {
+                            'water': water,
+                            'energy': energy,
+                            'bleed_sources': bleed_sources
+                        }
+                    })
+                    break
+        
+        # Create the death stats event (for tracking purposes)
         event = PlayerEvent(
             timestamp=timestamp,
             player_name=player_name,
@@ -1309,8 +1406,14 @@ class DayZADMParser:
             # Dispatch to handler-based system
             result = self._dispatch_event(event_type, match, base_date, line)
             
-            if result.event is None:
+            # If not handled, return None (will be marked as malformed)
+            if not result.handled:
                 return None
+            
+            # If handled but no event created (e.g., informational lines), return special marker
+            if result.event is None:
+                # Return a special marker to indicate successful handling without event creation
+                return "HANDLED_NO_EVENT"
             
             # Backward compatibility: store combat events in details for existing parse_file logic
             if result.combat_events:
@@ -1364,6 +1467,9 @@ class DayZADMAnalyzer(FileBasedTool):
         self.combat_events: List[CombatEvent] = []
         self.player_sessions: Dict[str, List[PlayerSession]] = defaultdict(list)
         self.current_sessions: Dict[str, PlayerSession] = {}
+        
+        # Track recent events for death stats association
+        self._last_events: List[PlayerEvent] = []
 
         # Cached derived maps for performance optimization
         self._events_by_player: Optional[Dict[str, List[PlayerEvent]]] = None
@@ -1468,6 +1574,15 @@ class DayZADMAnalyzer(FileBasedTool):
         # Process events through the analyzer
         for event in events:
             self.events.append(event)
+            
+            # Track recent events for death stats association
+            self._last_events.append(event)
+            # Keep only last 20 events to prevent memory bloat
+            if len(self._last_events) > 20:
+                self._last_events = self._last_events[-10:]
+            
+            # Also update parser's _last_events for real-time association
+            self.parser._last_events = self._last_events
             
             # Handle specific event types for session management
             if event.event_type == 'connection':
@@ -2434,12 +2549,17 @@ Examples:
         total_combat_logs = sum(stats.get('combat_logs', 0) for stats in player_stats['players'].values())
         combat_log_players = len([p for p in player_stats.get('players', {}) if player_stats['players'][p].get('combat_logs', 0) > 0])
         
+        # Calculate banned connection attempts
+        banned_connection_events = [e for e in analyzer.events if e.event_type == 'banned_connection_attempt']
+        total_banned_connections = len(banned_connection_events)
+        
         md_lines.append(f"\n## Administrative Events")
         md_lines.append(f"- Teleported Players: {format_european_number(teleported_players)}")
         md_lines.append(f"- Restricted Area Violations: {format_european_number(restricted_violations)}")
         md_lines.append(f"- Average Teleport Distance: {format_european_number(avg_distance, 2)} meters")
         md_lines.append(f"- Combat Logging Events: {format_european_number(total_combat_logs)}")
         md_lines.append(f"- Players with Combat Logs: {format_european_number(combat_log_players)}")
+        md_lines.append(f"- Banned Connection Attempts: {format_european_number(total_banned_connections)}")
 
         # --- Config-driven special events for Markdown summary ---
         # Count special events globally
@@ -2569,6 +2689,13 @@ Examples:
                     avg_damage = format_european_number(entry['average_damage'], 2)
                     total_hits = format_european_number(entry['total_hits'])
                     md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {avg_damage} avg damage over {total_hits} hits")
+
+        # Banned Connection Attempts
+        if banned_connection_events:
+            md_lines.append(f"\n### Banned Connection Attempts")
+            for event in banned_connection_events:
+                timestamp_str = event.timestamp.strftime('%d-%m-%Y %H:%M:%S') if event.timestamp else 'Unknown'
+                md_lines.append(f"* {timestamp_str}: Player \"{event.player_name}\" attempted to connect (banned)")
 
         # Write Markdown report
         with open(md_report_path, 'w', encoding='utf-8') as f:
