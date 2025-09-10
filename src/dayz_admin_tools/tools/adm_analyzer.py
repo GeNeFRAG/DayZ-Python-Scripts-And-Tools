@@ -583,6 +583,48 @@ class DayZADMParser:
         details = {'raw_line': raw_line}
         return timestamp, player_name, player_id, details
 
+    def _create_player_event(self, event_type: str, match, base_date: datetime, raw_line: str, 
+                           position: Optional[Tuple[float, float, float]] = None,
+                           extra_details: Optional[Dict[str, Any]] = None,
+                           override_player_id: Optional[str] = None,
+                           override_player_name: Optional[str] = None) -> PlayerEvent:
+        """
+        Factory method to create PlayerEvent instances with common setup.
+        
+        Args:
+            event_type: Type of the event
+            match: Regex match object
+            base_date: Base date for timestamp creation
+            raw_line: Original log line
+            position: Optional position tuple (x, y, z)
+            extra_details: Optional additional details to merge
+            override_player_id: Optional override for player_id
+            override_player_name: Optional override for player_name
+            
+        Returns:
+            PlayerEvent instance with all common setup applied
+        """
+        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
+        
+        # Apply overrides if provided
+        if override_player_id is not None:
+            player_id = override_player_id
+        if override_player_name is not None:
+            player_name = override_player_name
+        
+        # Merge extra details if provided
+        if extra_details:
+            details.update(extra_details)
+        
+        return PlayerEvent(
+            timestamp=timestamp,
+            player_name=player_name,
+            player_id=player_id,
+            event_type=event_type,
+            position=position,
+            details=details
+        )
+
     def _dispatch_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Dispatch event parsing to appropriate handler based on event type."""
         # Map event types to their handlers
@@ -631,17 +673,7 @@ class DayZADMParser:
 
     def _handle_connection_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle connection and disconnection events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
-        position = None
-        
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
-            position=position,
-            details=details
-        )
+        event = self._create_player_event(event_type, match, base_date, raw_line)
         return HandlerResult(event=event)
 
     def _handle_disconnection_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
@@ -650,39 +682,23 @@ class DayZADMParser:
 
     def _handle_banned_connection_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle banned player connection attempts (id=Unknown disconnections)."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
-        
-        # Override the player_id to be "Unknown" and add ban-related details
-        player_id = "Unknown"
-        details.update({
+        extra_details = {
             'reason': 'banned_player_attempt',
             'banned': True,
             'administrative_action': True
-        })
+        }
         
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
-            position=None,  # No position data for banned connection attempts
-            details=details
+        event = self._create_player_event(
+            event_type, match, base_date, raw_line,
+            override_player_id="Unknown",
+            extra_details=extra_details
         )
         return HandlerResult(event=event)
 
     def _handle_position_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle player position events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
-        
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
-            position=position,
-            details=details
-        )
+        event = self._create_player_event(event_type, match, base_date, raw_line, position=position)
         return HandlerResult(event=event)
 
     def _handle_player_list_dead_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
@@ -695,14 +711,14 @@ class DayZADMParser:
 
     def _handle_state_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle state events (unconscious, conscious, suicide, emote)."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
+        extra_details = {}
         
         # Handle emote-specific details
         if event_type == 'emote':
             emote = self._safe_named_group_access(match, 'emote', '')
             emote_item = self._safe_named_group_access(match, 'emote_item', '')
-            details.update({
+            extra_details.update({
                 'emote': emote,
                 'emote_item': emote_item
             })
@@ -712,20 +728,17 @@ class DayZADMParser:
             hp = self._safe_named_group_access(match, 'hp', '')
             hit_location = self._safe_named_group_access(match, 'hit_location', '')
             damage = self._safe_named_group_access(match, 'damage', '')
-            details.update({
+            extra_details.update({
                 'hp': hp,
                 'hit_location': hit_location,
                 'damage': damage,
                 'attacker': 'TripwireTrap'
             })
         
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
+        event = self._create_player_event(
+            event_type, match, base_date, raw_line,
             position=position,
-            details=details
+            extra_details=extra_details if extra_details else None
         )
         return HandlerResult(event=event)
 
@@ -1261,68 +1274,56 @@ class DayZADMParser:
 
     def _handle_packed_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle packed events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
         structure = self._safe_named_group_access(match, 'structure', '')
         tool = self._safe_named_group_access(match, 'tool', '')
-        details.update({
+        extra_details = {
             'action': event_type,
             'structure': structure,
             'tool': tool
-        })
+        }
         
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
+        event = self._create_player_event(
+            event_type, match, base_date, raw_line,
             position=position,
-            details=details
+            extra_details=extra_details
         )
         return HandlerResult(event=event)
 
     def _handle_placed_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle placed events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
         structure = self._safe_named_group_access(match, 'structure', '')
-        details.update({
+        extra_details = {
             'action': event_type,
             'structure': structure,
             'tool': ''
-        })
+        }
         
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
+        event = self._create_player_event(
+            event_type, match, base_date, raw_line,
             position=position,
-            details=details
+            extra_details=extra_details
         )
         return HandlerResult(event=event)
 
     def _handle_folded_event(self, event_type: str, match, base_date: datetime, raw_line: str) -> HandlerResult:
         """Handle folded events."""
-        timestamp, player_name, player_id, details = self._base_event(event_type, match, base_date, raw_line)
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
         structure = self._safe_named_group_access(match, 'structure', '')
-        details.update({
+        extra_details = {
             'action': event_type,
             'structure': structure,
             'tool': ''
-        })
+        }
         
-        event = PlayerEvent(
-            timestamp=timestamp,
-            player_name=player_name,
-            player_id=player_id,
-            event_type=event_type,
+        event = self._create_player_event(
+            event_type, match, base_date, raw_line,
             position=position,
-            details=details
+            extra_details=extra_details
         )
         return HandlerResult(event=event)
 
