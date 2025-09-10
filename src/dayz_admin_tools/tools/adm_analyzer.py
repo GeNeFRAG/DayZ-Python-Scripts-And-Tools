@@ -2398,7 +2398,7 @@ Examples:
         # Convert meters to kilometers
         total_distance_km = total_distance_all_players / 1000
         
-        # Count special events globally
+        # Count special events globally (computed once and reused)
         special_event_counts_global = {name: 0 for name in analyzer._special_event_names}
         for e in analyzer.events:
             if e.event_type in analyzer._special_event_names:
@@ -2442,11 +2442,7 @@ Examples:
         md_lines.append(f"- Banned Connection Attempts: {format_european_number(total_banned_connections)}")
 
         # --- Config-driven special events for Markdown summary ---
-        # Count special events globally
-        special_event_counts_global = {name: 0 for name in analyzer._special_event_names}
-        for e in analyzer.events:
-            if e.event_type in analyzer._special_event_names:
-                special_event_counts_global[e.event_type] += 1
+        # (special_event_counts_global already computed above)
 
         md_lines.append(f"\n## Player Activity Rankings")
 
