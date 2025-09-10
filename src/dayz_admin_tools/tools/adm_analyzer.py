@@ -175,7 +175,6 @@ class ParseSummary:
     malformed_samples: List[str] = None
     connections: int = 0
     disconnections: int = 0
-    banned_connections: int = 0
     combat_events: int = 0
     deaths: int = 0
     building_events: int = 0
@@ -382,8 +381,6 @@ class DayZADMParser:
                         summary.connections += 1
                     elif event_type == 'disconnection':
                         summary.disconnections += 1
-                    elif event_type == 'banned_connection_attempt':
-                        summary.banned_connections += 1
                     elif event_type in ['building', 'mounted', 'unmounted', 'placed', 'folded', 'packed', 'repaired', 'raisedflag', 'builtbaseon', 'dismantle']:
                         summary.building_events += 1
                     elif event_type == 'emote':
@@ -1544,11 +1541,6 @@ class DayZADMAnalyzer(FileBasedTool):
         """Get all combat events where player is the victim using cached lookup."""
         self._ensure_cache_valid()
         return self._combat_events_by_victim.get(player_id, [])
-    
-    def get_player_name(self, player_id: str) -> str:
-        """Get player name for a player ID using cached lookup."""
-        self._ensure_cache_valid()
-        return self._player_id_to_name.get(player_id, "Unknown")
         
     def parse_log_file(self, log_file: str, debug_skipped_file: Optional[str] = None, append_debug: bool = False) -> Dict[str, Any]:
         """
@@ -1891,7 +1883,6 @@ class DayZADMAnalyzer(FileBasedTool):
             'excessive_suicides': [],
             'rapid_reconnections': [],
             'suspicious_movement': [],
-            'high_damage_dealers': [],
             'stat_padding_suspects': [],
             'frequent_teleports': []
         }
@@ -1942,26 +1933,6 @@ class DayZADMAnalyzer(FileBasedTool):
                     'rapid_reconnects': rapid_reconnects,
                     'total_sessions': len(sessions)
                 })
-        
-        # High damage dealers (suspiciously high damage per hit)
-        combat_stats = defaultdict(lambda: {'total_damage': 0, 'hits': 0})
-        for event in self.combat_events:
-            # Filter out environmental damage (None or empty attacker_id)
-            if event.attacker_id and event.attacker_id.strip():
-                combat_stats[event.attacker_id]['total_damage'] += event.damage
-                combat_stats[event.attacker_id]['hits'] += 1
-        
-        for player_id, stats in combat_stats.items():
-            if stats['hits'] > 0:
-                avg_damage = stats['total_damage'] / stats['hits']
-                if avg_damage > 150:  # Suspiciously high average damage
-                    player_name = self.get_player_name(player_id)
-                    anomalies['high_damage_dealers'].append({
-                        'player_name': player_name,
-                        'player_id': player_id,
-                        'average_damage': avg_damage,
-                        'total_hits': stats['hits']
-                    })
         
         # Frequent teleportations (more than 3 teleports per session)
         for player_id, sessions in self.player_sessions.items():
@@ -2681,14 +2652,7 @@ Examples:
                     rapid_reconnects = format_european_number(entry['rapid_reconnects'])
                     total_sessions = format_european_number(entry['total_sessions'])
                     md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {rapid_reconnects} rapid reconnects in {total_sessions} sessions")
-            # High Damage Dealers
-            high_damage_dealers = anomalies.get('high_damage_dealers', [])
-            if high_damage_dealers:
-                md_lines.append(f"* High Damage Dealers:")
-                for entry in high_damage_dealers:
-                    avg_damage = format_european_number(entry['average_damage'], 2)
-                    total_hits = format_european_number(entry['total_hits'])
-                    md_lines.append(f"    - {entry['player_name']} ({entry['player_id']}): {avg_damage} avg damage over {total_hits} hits")
+
 
         # Banned Connection Attempts
         if banned_connection_events:
