@@ -161,9 +161,14 @@ class PlayerSession:
 class ParseResult:
     """Result of parsing a single line."""
     event: Optional[PlayerEvent] = None
+    combat_events: List['CombatEvent'] = None
     error: Optional[str] = None
     line_number: int = 0
     raw_line: str = ""
+    
+    def __post_init__(self):
+        if self.combat_events is None:
+            self.combat_events = []
 
 
 @dataclass 
@@ -390,10 +395,10 @@ class DayZADMParser:
                     elif event_type in ['bledout', 'death_player', 'death_fall', 'death_by_bear', 'death_by_wolf', 'death_by_explosion', 'death_by_zombie', 'suicide']:
                         summary.deaths += 1
                     
-                    # Handle combat events
-                    if hasattr(parse_result.event.details, 'get') and parse_result.event.details.get('combat_event'):
-                        combat_events.append(parse_result.event.details['combat_event'])
-                        summary.combat_events += 1
+                    # Handle combat events from ParseResult (proper separation of concerns)
+                    if parse_result.combat_events:
+                        combat_events.extend(parse_result.combat_events)
+                        summary.combat_events += len(parse_result.combat_events)
                     
                     # Update timestamps
                     timestamp = parse_result.event.timestamp
@@ -457,18 +462,19 @@ class DayZADMParser:
                 match = pattern.match(line)
                 if match:
                     logger.debug(f"MATCHED EVENT TYPE: {event_type}")
-                    event = self._create_event_from_match(event_type, match, base_date, line)
-                    if event == "HANDLED_NO_EVENT":
-                        # Line was successfully handled but no event created (e.g., informational)
-                        return ParseResult(event=None, line_number=line_number, raw_line=line)
-                    elif event:
-                        return ParseResult(event=event, line_number=line_number, raw_line=line)
-                    else:
-                        return ParseResult(
-                            error=f"Failed to create event from match for type {event_type}",
-                            line_number=line_number,
-                            raw_line=line
-                        )
+                    handler_result = self._create_event_from_match(event_type, match, base_date, line)
+                    
+                    # If not handled, continue to next pattern
+                    if not handler_result.handled:
+                        continue
+                    
+                    # Create ParseResult with event and combat_events properly separated
+                    return ParseResult(
+                        event=handler_result.event,
+                        combat_events=handler_result.combat_events,
+                        line_number=line_number,
+                        raw_line=line
+                    )
             except Exception as e:
                 logger.debug(f"Error matching pattern {event_type}: {e}")
                 continue
@@ -842,7 +848,6 @@ class DayZADMParser:
             )
             
             combat_events.append(combat_event)
-            details['combat_event'] = combat_event
             
             # Track recent combat events to help avoid duplicates in kill events
             if not hasattr(self, '_recent_combat_events'):
@@ -930,10 +935,6 @@ class DayZADMParser:
             # Keep only recent events to prevent memory bloat
             if len(self._recent_combat_events) > 100:
                 self._recent_combat_events = self._recent_combat_events[-50:]
-            
-            # Back-compat: expose first combat event in details
-            details['combat_event'] = ce
-            details['combat_events_all'] = [ce]
 
         event = PlayerEvent(
             timestamp=timestamp,
@@ -1397,32 +1398,15 @@ class DayZADMParser:
         )
         return HandlerResult(event=event)
     
-    def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> Optional[PlayerEvent]:
-        """Create a PlayerEvent from a regex match - includes combat event creation."""
+    def _create_event_from_match(self, event_type: str, match, base_date: datetime, line: str) -> HandlerResult:
+        """Create a HandlerResult from a regex match - includes combat event creation."""
         try:
             # Dispatch to handler-based system
             result = self._dispatch_event(event_type, match, base_date, line)
-            
-            # If not handled, return None (will be marked as malformed)
-            if not result.handled:
-                return None
-            
-            # If handled but no event created (e.g., informational lines), return special marker
-            if result.event is None:
-                # Return a special marker to indicate successful handling without event creation
-                return "HANDLED_NO_EVENT"
-            
-            # Backward compatibility: store combat events in details for existing parse_file logic
-            if result.combat_events:
-                # Store first combat event for backward compatibility
-                result.event.details['combat_event'] = result.combat_events[0]
-                # Store all combat events for future use
-                result.event.details['combat_events_all'] = result.combat_events
-            
-            return result.event
+            return result
         except Exception as e:
             logger.error(f"Error creating event from match for type {event_type}: {e}")
-            return None
+            return HandlerResult()
 
 
 class DayZADMAnalyzer(FileBasedTool):
