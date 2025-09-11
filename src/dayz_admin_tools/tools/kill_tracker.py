@@ -57,6 +57,7 @@ class KillTracker(FileBasedTool):
         """
         kills = {}
         killed_tags = {}
+        processed_kills = set()  # Track processed kill events to avoid double-counting
         log_date = None
 
         # Resolve the path to ensure it's absolute
@@ -77,6 +78,9 @@ class KillTracker(FileBasedTool):
 
                     # Check if the line contains a kill event
                     if "killed by Player" in line:
+                        # The "killed by Player" line is the canonical kill event
+                        # Don't filter it out even if it shows (DEAD) status
+                        
                         # Extract timestamp and combine with log_date
                         time_part = line.split(" | ")[0]
                         log_datetime = datetime.strptime(f"{log_date} {time_part}", "%Y-%m-%d %H:%M:%S")
@@ -88,14 +92,26 @@ class KillTracker(FileBasedTool):
                             continue
 
                         # Extract killer's name and killed player's name
-                        killer = line.split('killed by Player "')[1].split('"')[0]
-                        killed = line.split('Player "')[1].split('"')[0]
-
-                        # Update kills and killed Gamertags
-                        kills[killer] = kills.get(killer, 0) + 1
-                        if killer not in killed_tags:
-                            killed_tags[killer] = []
-                        killed_tags[killer].append(killed)
+                        try:
+                            killer = line.split('killed by Player "')[1].split('"')[0]
+                            killed = line.split('Player "')[1].split('"')[0]
+                            
+                            # Create a unique key for this kill event (timestamp + victim + killer)
+                            # This prevents double-counting multiple log lines for the same kill
+                            kill_key = f"{time_part}_{killed}_{killer}"
+                            
+                            # Only count if we haven't seen this exact kill event before
+                            if kill_key not in processed_kills:
+                                processed_kills.add(kill_key)
+                                
+                                # Update kills and killed Gamertags
+                                kills[killer] = kills.get(killer, 0) + 1
+                                if killer not in killed_tags:
+                                    killed_tags[killer] = []
+                                killed_tags[killer].append(killed)
+                        except (IndexError, ValueError) as e:
+                            logger.warning(f"Failed to parse kill event: {line.strip()} - {str(e)}")
+                            continue
         except Exception as e:
             logger.error(f"Error parsing log file {resolved_path}: {str(e)}")
             
