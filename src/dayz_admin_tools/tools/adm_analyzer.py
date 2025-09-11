@@ -20,6 +20,9 @@ Recent Improvements:
 - Performance optimizations with cached special event names
 - Enhanced data quality with comprehensive event details
 - Backward compatibility maintained while improving accuracy
+- Fixed player ID regex patterns to match lowercase hex and hyphens ([A-Fa-f0-9-]+)
+- Fixed inconsistent _last_events management with unified MAX_LAST_EVENTS constant
+- Converted teleport distance reporting from meters to kilometers for better readability
 """
 
 import argparse
@@ -36,6 +39,9 @@ from ..base import FileBasedTool
 
 logger = logging.getLogger(__name__)
 
+# Constants
+MAX_LAST_EVENTS = 20  # Maximum number of recent events to keep in memory for analysis
+
 
 def format_european_number(value, decimal_places=None):
     """
@@ -44,6 +50,10 @@ def format_european_number(value, decimal_places=None):
     - Comma (,) as decimal separator
     """
     if value is None:
+        if decimal_places is not None:
+            # Return "0,00" format when decimal places are requested
+            formatted = f"{0.0:,.{decimal_places}f}"
+            return formatted.replace(',', '|TEMP|').replace('.', ',').replace('|TEMP|', '.')
         return "0"
     
     if isinstance(value, (int, float)):
@@ -252,52 +262,52 @@ class DayZADMParser:
         # Patterns are grouped and commented by event type for clarity
         self.patterns = {
             # --- Connection/Disconnection Events ---
-            'connection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*is connected'),
-            'disconnection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\)\s*has been disconnected'),
+            'connection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\)\s*is connected'),
+            'disconnection': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\)\s*has been disconnected'),
             'banned_connection_attempt': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=Unknown\)\s*has been disconnected'),
 
             # --- Player State/Status Events ---
-            'unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is unconscious'),
-            'conscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*regained consciousness'),
-            'suicide': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)(?:\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>)?\)\s*committed suicide'),
-            'death_stats': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*died\.\s*Stats>\s*Water:\s*(?P<water>[0-9.]+)\s*Energy:\s*(?P<energy>[0-9.]+)\s*Bleed sources:\s*(?P<bleed_sources>\d+)'),
-            'bledout': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*bled out'),
-            'respawn': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is choosing to respawn'),
-            'emote': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*performed (?P<emote>[^\s]+)(?:\s+with\s+(?P<emote_item>[^\s]+))?'),
-            'tripwire_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+TripwireTrap\s+into\s+\((?P<hit_location>-?\d+)\)\s+for\s+(?P<damage>[0-9.]+)\s+damage\s+\(TripWireHit\)'),
+            'unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is unconscious'),
+            'conscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*regained consciousness'),
+            'suicide': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-Fa-f0-9-]+)(?:\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>)?\)\s*committed suicide'),
+            'death_stats': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*died\.\s*Stats>\s*Water:\s*(?P<water>[0-9.]+)\s*Energy:\s*(?P<energy>[0-9.]+)\s*Bleed sources:\s*(?P<bleed_sources>\d+)'),
+            'bledout': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*bled out'),
+            'respawn': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is choosing to respawn'),
+            'emote': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*performed (?P<emote>[^\s]+)(?:\s+with\s+(?P<emote_item>[^\s]+))?'),
+            'tripwire_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+TripwireTrap\s+into\s+\((?P<hit_location>-?\d+)\)\s+for\s+(?P<damage>[0-9.]+)\s+damage\s+\(TripWireHit\)'),
 
             # --- Combat Events ---
-            'hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<victim_id>[A-F0-9]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*\[HP:\s*(?P<victim_hp>[0-9.]+)\]\s*hit by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-F0-9]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*into\s*(?P<hit_location>[^(]+)\((?P<hit_location_id>\d+)\)\s*for\s*(?P<damage>[0-9.]+)\s+damage\s*\((?P<ammo>[^)]+)\)(?:\s*with\s+(?P<weapon>[^\s]+)(?:\s+from\s+(?P<distance>[0-9.]+)\s+meters)?)?'),
-            'kill': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<victim_id>[A-F0-9]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*killed by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-F0-9]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*with\s*(?P<weapon>[^\s]+)\s*from\s*(?P<distance>[0-9.]+)\s+meters'),
-            'env_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by\s+(?P<attacker>[^\s]+)\s+with\s+(?P<weapon>[^\s]+)'),
-            'env_hit_simple': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+(?P<attacker>[^\s]+)$'),
-            'explosion_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by explosion\s+\((?P<explosion_type>[^)]+)\)'),
-            'death_player': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+killed by\s+(?P<killer>[^\s]+)'),
-            'death_fall': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*0\]\s+hit by\s+FallDamageHealth'),
-            'combat_log_unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is disconnecting while being unconscious'),
+            'hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<victim_id>[A-Fa-f0-9-]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*\[HP:\s*(?P<victim_hp>[0-9.]+)\]\s*hit by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-Fa-f0-9-]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*into\s*(?P<hit_location>[^(]+)\((?P<hit_location_id>\d+)\)\s*for\s*(?P<damage>[0-9.]+)\s+damage\s*\((?P<ammo>[^)]+)\)(?:\s*with\s+(?P<weapon>[^\s]+)(?:\s+from\s+(?P<distance>[0-9.]+)\s+meters)?)?'),
+            'kill': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<victim_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<victim_id>[A-Fa-f0-9-]+)\s*pos=<(?P<victim_x>[0-9.-]+),\s*(?P<victim_y>[0-9.-]+),\s*(?P<victim_z>[0-9.-]+)>\)\s*killed by Player\s*"(?P<attacker_name>[^"]+?)"\s*\(id=(?P<attacker_id>[A-Fa-f0-9-]+)\s*pos=<(?P<attacker_x>[0-9.-]+),\s*(?P<attacker_y>[0-9.-]+),\s*(?P<attacker_z>[0-9.-]+)>\)\s*with\s*(?P<weapon>[^\s]+)\s*from\s*(?P<distance>[0-9.]+)\s+meters'),
+            'env_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by\s+(?P<attacker>[^\s]+)\s+with\s+(?P<weapon>[^\s]+)'),
+            'env_hit_simple': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s*hit by\s+(?P<attacker>[^\s]+)$'),
+            'explosion_hit': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*(?:\(DEAD\)\s*)?\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*(?P<hp>[0-9.]+)\]\s+hit by explosion\s+\((?P<explosion_type>[^)]+)\)'),
+            'death_player': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+killed by\s+(?P<killer>[^\s]+)'),
+            'death_fall': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\[HP:\s*0\]\s+hit by\s+FallDamageHealth'),
+            'combat_log_unconscious': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*is disconnecting while being unconscious'),
 
             # --- Building/Construction Events ---
-            'building': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>Built|Dismantled)\s+(?P<structure>[^\s]+)\s+(?P<on_or_from>on|from)\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
-            'mounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Mounted)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>.+)$'),
-            'unmounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Unmounted)\s+(?P<structure>[^\s]+)\s+from\s+(?P<parent>.+)$'),
-            'raisedflag': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+has\s+(?P<action>raised)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>[^\s]+)\s+at\s+<[0-9.-]+,\s*[0-9.-]+,\s*[0-9.-]+>$'),
-            'builtbaseon': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Built\s+(?P<action>base)\s+on\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
-            'dismantle': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)(?P<action>Dismantled)\s+(?P<structure>[^\s]+(?: [^\s]+)*)\s+from\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
-            'repaired': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>repaired)\s+(?P<structure>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
-            'packed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+packed\s+(?P<structure>.+?)\s+with\s+(?P<tool>[^\s]+)$'),
-            'placed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+placed\s+(?P<structure>.+)$'),
-            'folded': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+folded\s+(?P<structure>.+)$'),
+            'building': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>Built|Dismantled)\s+(?P<structure>[^\s]+)\s+(?P<on_or_from>on|from)\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
+            'mounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Mounted)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>.+)$'),
+            'unmounted': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Player\s+[^<]*<[^>]*>\s+(?P<action>Unmounted)\s+(?P<structure>[^\s]+)\s+from\s+(?P<parent>.+)$'),
+            'raisedflag': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+has\s+(?P<action>raised)\s+(?P<structure>[^\s]+)\s+on\s+(?P<parent>[^\s]+)\s+at\s+<[0-9.-]+,\s*[0-9.-]+,\s*[0-9.-]+>$'),
+            'builtbaseon': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)Built\s+(?P<action>base)\s+on\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
+            'dismantle': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)(?P<action>Dismantled)\s+(?P<structure>[^\s]+(?: [^\s]+)*)\s+from\s+(?P<parent>[^\s]+)\s+with\s+(?P<tool>.+)$'),
+            'repaired': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*(?P<action>repaired)\s+(?P<structure>[^\s]+)\s+with\s+(?P<tool>[^\s]+)$'),
+            'packed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+packed\s+(?P<structure>.+?)\s+with\s+(?P<tool>[^\s]+)$'),
+            'placed': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+placed\s+(?P<structure>.+)$'),
+            'folded': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s+folded\s+(?P<structure>.+)$'),
 
             # --- Teleportation Events ---
-            'teleported': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*was teleported from:\s*<(?P<from_x>[0-9.-]+),\s*(?P<from_y>[0-9.-]+),\s*(?P<from_z>[0-9.-]+)>\s*to:\s*<(?P<to_x>[0-9.-]+),\s*(?P<to_y>[0-9.-]+),\s*(?P<to_z>[0-9.-]+)>\.\s*Reason:\s*(?P<reason>.+)$'),
+            'teleported': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*was teleported from:\s*<(?P<from_x>[0-9.-]+),\s*(?P<from_y>[0-9.-]+),\s*(?P<from_z>[0-9.-]+)>\s*to:\s*<(?P<to_x>[0-9.-]+),\s*(?P<to_y>[0-9.-]+),\s*(?P<to_z>[0-9.-]+)>\.\s*Reason:\s*(?P<reason>.+)$'),
 
             # --- Fallback/Player Position ---
             # Match simple position lines that end after the position coordinates
-            'player_position': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-F0-9]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*$'),
+            'player_position': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)\s*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)\s*$'),
             
             # --- Player List Entry (Informational) ---
             # Match player list entries with dead players - these don't add information to kill events
-            'player_list_dead': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-F0-9]+)[\s\)]*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)?\s*$')
+            'player_list_dead': re.compile(r'(?P<time>\d{2}:\d{2}:\d{2})\s*\|\s*Player\s*"(?P<player_name>[^"]+?)"\s*\(DEAD\)\s*\(id=(?P<player_id>[A-Fa-f0-9-]+)[\s\)]*pos=<(?P<x>[0-9.-]+),\s*(?P<y>[0-9.-]+),\s*(?P<z>[0-9.-]+)>\)?\s*$')
         }
 
         # --- Special/Other Events from config ---
@@ -376,9 +386,9 @@ class DayZADMParser:
                     
                     # Track recent events for death stats association
                     self._last_events.append(parse_result.event)
-                    # Keep only last 20 events to prevent memory bloat
-                    if len(self._last_events) > 20:
-                        self._last_events = self._last_events[-10:]
+                    # Keep only last MAX_LAST_EVENTS events to prevent memory bloat
+                    if len(self._last_events) > MAX_LAST_EVENTS:
+                        self._last_events = self._last_events[-MAX_LAST_EVENTS:]
                     
                     # Update event type counters
                     event_type = parse_result.event.event_type
@@ -725,9 +735,9 @@ class DayZADMParser:
         
         # Handle tripwire hit specific details
         elif event_type == 'tripwire_hit':
-            hp = self._safe_named_group_access(match, 'hp', '')
+            hp = self._safe_named_group_float(match, 'hp', 0.0)
             hit_location = self._safe_named_group_access(match, 'hit_location', '')
-            damage = self._safe_named_group_access(match, 'damage', '')
+            damage = self._safe_named_group_float(match, 'damage', 0.0)
             extra_details.update({
                 'hp': hp,
                 'hit_location': hit_location,
@@ -748,9 +758,9 @@ class DayZADMParser:
         position = self._safe_position_extract_named(match, 'x', 'y', 'z')
         
         # Extract death statistics data
-        water = self._safe_named_group_access(match, 'water', '0')
-        energy = self._safe_named_group_access(match, 'energy', '0') 
-        bleed_sources = self._safe_named_group_access(match, 'bleed_sources', '0')
+        water = self._safe_named_group_float(match, 'water', 0.0)
+        energy = self._safe_named_group_float(match, 'energy', 0.0) 
+        bleed_sources = int(self._safe_named_group_float(match, 'bleed_sources', 0.0))
         
         details.update({
             'water': water,
@@ -761,7 +771,7 @@ class DayZADMParser:
         # Look for a corresponding suicide event within the last few events
         # This will associate the death stats with the suicide event
         if hasattr(self, '_last_events') and self._last_events:
-            for recent_event in reversed(self._last_events[-10:]):  # Check last 10 events
+            for recent_event in reversed(self._last_events[-MAX_LAST_EVENTS:]):  # Check recent events
                 if (recent_event.player_id == player_id and 
                     recent_event.event_type == 'suicide' and
                     abs((timestamp - recent_event.timestamp).total_seconds()) < 60):  # Within 1 minute
@@ -1554,9 +1564,9 @@ class DayZADMAnalyzer(FileBasedTool):
             
             # Track recent events for death stats association
             self._last_events.append(event)
-            # Keep only last 20 events to prevent memory bloat
-            if len(self._last_events) > 20:
-                self._last_events = self._last_events[-10:]
+            # Keep only last MAX_LAST_EVENTS events to prevent memory bloat
+            if len(self._last_events) > MAX_LAST_EVENTS:
+                self._last_events = self._last_events[-MAX_LAST_EVENTS:]
             
             # Also update parser's _last_events for real-time association
             self.parser._last_events = self._last_events
@@ -1973,7 +1983,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 writer = csv.writer(f)
                 writer.writerow([
                     'Timestamp', 'Player Name', 'From X', 'From Y', 'From Z',
-                    'To X', 'To Y', 'To Z', 'Distance', 'Reason', 'Restricted Area'
+                    'To X', 'To Y', 'To Z', 'Distance (km)', 'Reason', 'Restricted Area'
                 ])
                 for event in teleport_events:
                     details = event.details or {}
@@ -1984,7 +1994,7 @@ class DayZADMAnalyzer(FileBasedTool):
                         event.player_name,
                         from_pos[0], from_pos[1], from_pos[2],
                         to_pos[0], to_pos[1], to_pos[2],
-                        round(details.get('teleport_distance', 0), 2),
+                        round(details.get('teleport_distance', 0) / 1000, 3),  # Convert to kilometers
                         details.get('reason', ''),
                         details.get('restricted_area', '')
                     ])
@@ -2424,7 +2434,7 @@ Examples:
         avg_distance = 0
         if teleport_events:
             total_distance = sum([e.details.get('teleport_distance', 0) for e in teleport_events if e.details])
-            avg_distance = round(total_distance / len(teleport_events), 2)
+            avg_distance = round((total_distance / len(teleport_events)) / 1000, 3)  # Convert to kilometers
         
         combat_log_events = [e for e in analyzer.events if e.event_type == 'combat_log_unconscious']
         total_combat_logs = sum(stats.get('combat_logs', 0) for stats in player_stats['players'].values())
@@ -2437,7 +2447,7 @@ Examples:
         md_lines.append(f"\n## Administrative Events")
         md_lines.append(f"- Teleported Players: {format_european_number(teleported_players)}")
         md_lines.append(f"- Restricted Area Violations: {format_european_number(restricted_violations)}")
-        md_lines.append(f"- Average Teleport Distance: {format_european_number(avg_distance, 2)} meters")
+        md_lines.append(f"- Average Teleport Distance: {format_european_number(avg_distance, 3)} km")
         md_lines.append(f"- Combat Logging Events: {format_european_number(total_combat_logs)}")
         md_lines.append(f"- Players with Combat Logs: {format_european_number(combat_log_players)}")
         md_lines.append(f"- Banned Connection Attempts: {format_european_number(total_banned_connections)}")
