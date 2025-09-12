@@ -241,11 +241,20 @@ class DayZADMParser:
         'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar', 'MeleeSoft'
     }  # Cached set for efficient melee weapon detection
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """Initialize the parser with configuration."""
+    def __init__(self, config: Optional[Dict[str, Any]] = None, start_datetime: Optional[datetime] = None, end_datetime: Optional[datetime] = None):
+        """
+        Initialize the parser with configuration.
+        
+        Args:
+            config: Optional configuration dictionary
+            start_datetime: Optional start date and time filter. If only date is provided, time defaults to 00:00:00.
+            end_datetime: Optional end date and time filter. If only date is provided, time defaults to 23:59:59.
+        """
         self.config = config or {}
         self.last_timestamp = None  # Track last timestamp for midnight rollover detection
         self._last_events = []  # Track recent events for death stats association
+        self.start_datetime = start_datetime  # Start date filter
+        self.end_datetime = end_datetime  # End date filter
         
         # Cache special event names to avoid repeated list creation
         special_events_cfg = self.config.get('special_events', {})
@@ -325,6 +334,9 @@ class DayZADMParser:
     def parse_file(self, log_file: str, max_malformed_samples: int = 10, debug_skipped_file: Optional[str] = None, append_debug: bool = False) -> tuple[List[PlayerEvent], List[CombatEvent], ParseSummary]:
         """
         Parse an ADM log file and yield events.
+        
+        If start_datetime or end_datetime are set in the parser instance, log entries
+        will be filtered by their timestamps.
         
         Args:
             log_file: Path to the ADM log file
@@ -464,13 +476,36 @@ class DayZADMParser:
         return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     
     def _parse_line(self, line: str, base_date: datetime, line_number: int) -> ParseResult:
-        """Parse a single log line into a ParseResult."""
+        """
+        Parse a single log line into a ParseResult.
+        
+        Lines will be filtered by timestamp if start_datetime or end_datetime are set.
+        
+        Args:
+            line: Raw log line to parse
+            base_date: Base date for timestamp calculation
+            line_number: Line number for error reporting
+            
+        Returns:
+            ParseResult object containing parsed event and combat events
+        """
         logger.debug(f"PARSING LINE {line_number}: {line}")
         
         for event_type, pattern in self.patterns.items():
             try:
                 match = pattern.match(line)
                 if match:
+                    # Extract time and create timestamp for date filtering
+                    time_str = self._safe_named_group_access(match, 'time', "00:00:00")
+                    log_timestamp = self._create_timestamp(time_str, base_date)
+                    
+                    # Apply date filters if specified
+                    if self.start_datetime and log_timestamp < self.start_datetime:
+                        logger.debug(f"Skipping line {line_number}: timestamp {log_timestamp} before start date {self.start_datetime}")
+                        continue
+                    if self.end_datetime and log_timestamp > self.end_datetime:
+                        logger.debug(f"Skipping line {line_number}: timestamp {log_timestamp} after end date {self.end_datetime}")
+                        continue
                     logger.debug(f"MATCHED EVENT TYPE: {event_type}")
                     handler_result = self._create_event_from_match(event_type, match, base_date, line)
                     
@@ -1483,6 +1518,21 @@ class DayZADMAnalyzer(FileBasedTool):
         # Parse error tracking
         self.parse_summary: Optional[ParseSummary] = None
         
+    def _extract_date_from_filename(self, filename: str) -> datetime:
+        """Extract date from log filename, fallback to current date."""
+        try:
+            # Try to extract date from filename like "ADM-2023-01-15.log"
+            import re
+            match = re.search(r'(\d{4})-(\d{2})-(\d{2})', filename)
+            if match:
+                year, month, day = match.groups()
+                return datetime(int(year), int(month), int(day))
+        except Exception as e:
+            logger.debug(f"Could not extract date from filename '{filename}': {e}")
+        
+        # Fallback to current date
+        return datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        
     def _invalidate_cache(self):
         """Invalidate cached derived maps when data changes."""
         self._events_by_player = None
@@ -1537,7 +1587,7 @@ class DayZADMAnalyzer(FileBasedTool):
         self._ensure_cache_valid()
         return self._combat_events_by_victim.get(player_id, [])
         
-    def parse_log_file(self, log_file: str, debug_skipped_file: Optional[str] = None, append_debug: bool = False) -> Dict[str, Any]:
+    def parse_log_file(self, log_file: str, debug_skipped_file: Optional[str] = None, append_debug: bool = False, start_datetime: Optional[datetime] = None, end_datetime: Optional[datetime] = None) -> Dict[str, Any]:
         """
         Parse a DayZ ADM log file using the decoupled parser.
         
@@ -1545,12 +1595,53 @@ class DayZADMAnalyzer(FileBasedTool):
             log_file: Path to the ADM log file
             debug_skipped_file: Optional path to write skipped/malformed lines for debugging
             append_debug: If True, append to debug file instead of overwriting
+            start_datetime: Optional start date and time filter. If only date is provided, time defaults to 00:00:00.
+            end_datetime: Optional end date and time filter. If only date is provided, time defaults to 23:59:59.
             
         Returns:
             Dictionary containing parsing results and statistics
         """
         log_path = self.resolve_path(log_file)
+        
+        # Check if file date is within the specified range
+        if start_datetime or end_datetime:
+            file_date = self._extract_date_from_filename(str(log_path))
+            
+            if start_datetime and file_date < start_datetime.replace(hour=0, minute=0, second=0, microsecond=0):
+                logger.info(f"Skipping log file {log_path}: before start date {start_datetime}")
+                return {
+                    'total_lines': 0,
+                    'parsed_events': 0,
+                    'malformed_lines': 0,
+                    'connections': 0,
+                    'disconnections': 0,
+                    'combat_events': 0,
+                    'deaths': 0,
+                    'building_events': 0,
+                    'emotes': 0,
+                    'teleported_events': 0
+                }
+                
+            if end_datetime and file_date > end_datetime.replace(hour=23, minute=59, second=59, microsecond=999999):
+                logger.info(f"Skipping log file {log_path}: after end date {end_datetime}")
+                return {
+                    'total_lines': 0,
+                    'parsed_events': 0,
+                    'malformed_lines': 0,
+                    'connections': 0,
+                    'disconnections': 0,
+                    'combat_events': 0,
+                    'deaths': 0,
+                    'building_events': 0,
+                    'emotes': 0,
+                    'teleported_events': 0
+                }
+        
         logger.info(f"Parsing ADM log file: {log_path}")
+        
+        # Update parser date filters
+        self.parser.start_datetime = start_datetime
+        self.parser.end_datetime = end_datetime
         
         # Use the decoupled parser to get events and error statistics
         events, combat_events, parse_summary = self.parser.parse_file(log_path, debug_skipped_file=debug_skipped_file, append_debug=append_debug)
@@ -2206,7 +2297,7 @@ class DayZADMAnalyzer(FileBasedTool):
         
         return created_files
     
-    def run(self, log_file: str, export_csv: bool = True, output_prefix: str = "adm_analysis", skip_parse: bool = False) -> Dict[str, Any]:
+    def run(self, log_file: str, export_csv: bool = True, output_prefix: str = "adm_analysis", skip_parse: bool = False, start_datetime: datetime = None, end_datetime: datetime = None) -> Dict[str, Any]:
         """
         Run the complete ADM log analysis.
         
@@ -2214,6 +2305,9 @@ class DayZADMAnalyzer(FileBasedTool):
             log_file: Path to the ADM log file
             export_csv: Whether to export results to CSV
             output_prefix: Prefix for output files
+            skip_parse: Skip parsing if data is already loaded
+            start_datetime: Optional start time filter
+            end_datetime: Optional end time filter
             
         Returns:
             Dictionary containing all analysis results
@@ -2316,6 +2410,18 @@ Examples:
         help='Write skipped/malformed log lines to a separate debug file for analysis'
     )
 
+    parser.add_argument(
+        '--start-date', 
+        help='Start date in DD.MM.YYYY format with optional time HH:MM:SS (e.g., 01.06.2023 or 01.06.2023 14:30:00). If only date is provided, time defaults to 00:00:00.', 
+        type=str
+    )
+    
+    parser.add_argument(
+        '--end-date', 
+        help='End date in DD.MM.YYYY format with optional time HH:MM:SS (e.g., 30.06.2023 or 30.06.2023 23:59:59). If only date is provided, time defaults to 23:59:59.', 
+        type=str
+    )
+
     # Add standard DayZ tool arguments
     DayZADMAnalyzer.add_standard_arguments(parser)
 
@@ -2331,6 +2437,34 @@ Examples:
     try:
         # Load configuration
         config = DayZADMAnalyzer.load_config(args.profile)
+        
+        # Parse start and end datetimes
+        start_datetime = None
+        end_datetime = None
+        
+        if args.start_date:
+            try:
+                # Try parsing with time component
+                try:
+                    start_datetime = datetime.strptime(args.start_date, "%d.%m.%Y %H:%M:%S")
+                except ValueError:
+                    # If that fails, try parsing with just the date and set time to midnight
+                    start_datetime = datetime.strptime(args.start_date, "%d.%m.%Y").replace(hour=0, minute=0, second=0)
+                logger.info(f"Using start date filter: {start_datetime}")
+            except ValueError:
+                raise ValueError(f"Invalid start date format. Use DD.MM.YYYY [HH:MM:SS] format (e.g., 01.06.2023 or 01.06.2023 14:30:00)")
+        
+        if args.end_date:
+            try:
+                # Try parsing with time component
+                try:
+                    end_datetime = datetime.strptime(args.end_date, "%d.%m.%Y %H:%M:%S")
+                except ValueError:
+                    # If that fails, try parsing with just the date and set time to end of day
+                    end_datetime = datetime.strptime(args.end_date, "%d.%m.%Y").replace(hour=23, minute=59, second=59)
+                logger.info(f"Using end date filter: {end_datetime}")
+            except ValueError:
+                raise ValueError(f"Invalid end date format. Use DD.MM.YYYY [HH:MM:SS] format (e.g., 30.06.2023 or 30.06.2023 23:59:59)")
 
         # Create analyzer
         analyzer = DayZADMAnalyzer(config)
@@ -2367,14 +2501,19 @@ Examples:
         for i, log_file in enumerate(log_files):
             # For multiple files, append to debug file after the first one
             append_debug = (i > 0) if debug_skipped_file else False
-            analyzer.parse_log_file(log_file, debug_skipped_file=debug_skipped_file, append_debug=append_debug)
+            analyzer.parse_log_file(log_file, debug_skipped_file=debug_skipped_file, 
+                                append_debug=append_debug,
+                                start_datetime=start_datetime,
+                                end_datetime=end_datetime)
 
         # Now run analysis on the aggregated data
         results = analyzer.run(
             log_file="multiple files",
             export_csv=not args.no_csv,
             output_prefix=args.output_prefix,
-            skip_parse=True
+            skip_parse=True,
+            start_datetime=start_datetime,
+            end_datetime=end_datetime
         )
 
 
