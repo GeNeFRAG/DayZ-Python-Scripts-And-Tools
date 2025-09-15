@@ -111,7 +111,7 @@ All configured special events will be extracted, counted per player, and include
 
 - **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API and analyze banned connection attempts from RPT logs (`dayz-player-list-manager`)
 - **ADM Log Analyzer**: Comprehensive analysis of DayZ AdminLog (ADM) files for player and combat statistics, building activity, and more. Generates Markdown summary reports (`dayz-adm-analyzer`)
-- **Event Spawn Plotter**: Visualize event spawn positions from cfgeventspawns.xml files on map images with coordinate annotations (`dayz-event-spawn-plotter`)
+- **Event Spawn Plotter**: Visualize event spawn positions from cfgeventspawns.xml files and player spawn points from cfgplayerspawnpoints.xml files on map images with coordinate annotations (`dayz-event-spawn-plotter`)
 
 
 ### Log Tools
@@ -233,27 +233,35 @@ The report is saved in the configured output directory (see `general.output_path
 
 ### Event Spawn Plotter Example
 
-Visualize event spawn positions from cfgeventspawns.xml files on a map image:
+Visualize event spawn positions from cfgeventspawns.xml files or player spawn points from cfgplayerspawnpoints.xml files on a map image:
 
 ```bash
-# Plot helicopter crash sites on map
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticHeliCrash
+# Plot event spawns
+dayz-event-spawn-plotter --event StaticHeliCrash
 
-# Plot contaminated areas with custom output file
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticContaminatedArea_Custom --output contaminated_zones.jpg
+# Plot event spawns with custom output file
+dayz-event-spawn-plotter --event StaticContaminatedArea --output contaminated_zones.jpg
 
 # List all available events in the XML file
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --list-events
+dayz-event-spawn-plotter --list-events
 
-# Use custom map dimensions for non-Chernarus maps
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --map livonia_map.jpg --event StaticHeliCrash --map-width 12800 --map-height 12800
+# Plot player spawn points (uses default fresh spawns from config)
+dayz-event-spawn-plotter --player-spawns
+
+# Plot specific player spawn types
+dayz-event-spawn-plotter --player-spawns --spawn-type hop
+dayz-event-spawn-plotter --player-spawns --spawn-type hop_Balota
+
+# List all available player spawn types
+dayz-event-spawn-plotter --player-spawns --list-spawns
 ```
 
 The Event Spawn Plotter generates high-quality images showing:
-- Event spawn positions as colored markers with coordinate annotations
-- Event name and spawn count in the legend
+- Event spawn positions or player spawn points as colored markers with coordinate annotations
+- Event/spawn type name and spawn count in the legend
 - Clear visualization of spawn distribution across the map
 - Support for all DayZ maps with configurable dimensions
+- Support for both event spawns and player spawns (fresh, hop, travel types)
 
 ### JSON Configuration
 
