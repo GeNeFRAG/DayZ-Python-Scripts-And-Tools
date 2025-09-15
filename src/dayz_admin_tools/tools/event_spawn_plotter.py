@@ -187,7 +187,7 @@ class EventSpawnPlotterTool(XMLTool):
         return spawn_types
     
     def plot_event_positions(self, map_image_path: str, event_positions: List[Tuple[float, float]], 
-                           event_name: str, output_path: str = None) -> str:
+                           event_name: str, output_path: str = None, title: str = None) -> str:
         """
         Plot event positions on the map image.
         
@@ -196,6 +196,7 @@ class EventSpawnPlotterTool(XMLTool):
             event_positions: List of (x, z) coordinate tuples
             event_name: Name of the event being plotted
             output_path: Path for output image (default: auto-generated)
+            title: Custom title for the plot (None or empty string = no title)
             
         Returns:
             Path to the generated output image
@@ -254,7 +255,11 @@ class EventSpawnPlotterTool(XMLTool):
                             arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
         
         # Set title and legend
-        plt.title(f'Event Spawn Locations: {event_name}', fontsize=14, fontweight='bold')
+        if title:
+            # Use custom title (if not empty string)
+            plt.title(title, fontsize=14, fontweight='bold')
+        # If title is None or empty string, don't set any title
+        
         if self.show_legend:
             plt.legend(loc='upper right')
         plt.axis('off')
@@ -306,7 +311,7 @@ class EventSpawnPlotterTool(XMLTool):
     
     def run(self, xml_file_path: str, map_file_path: str, event_name: str = None, 
             spawn_type: str = None, output_path: str = None, 
-            mode: str = "events") -> Dict[str, Any]:
+            mode: str = "events", title: str = None) -> Dict[str, Any]:
         """
         Complete workflow to plot spawns from XML file onto map.
         
@@ -317,6 +322,7 @@ class EventSpawnPlotterTool(XMLTool):
             spawn_type: Name of the spawn type to plot (for player-spawns mode)
             output_path: Optional output path for the generated image
             mode: Either "events" or "player-spawns" to determine which type to plot
+            title: Custom title for the plot (None or empty string = no title)
             
         Returns:
             Dictionary with results including output path and statistics
@@ -355,7 +361,7 @@ class EventSpawnPlotterTool(XMLTool):
         else:
             raise ValueError(f"Invalid mode '{mode}'. Must be 'events' or 'player-spawns'")
         
-        output_file = self.plot_event_positions(map_file_path, positions, plot_name, output_path)
+        output_file = self.plot_event_positions(map_file_path, positions, plot_name, output_path, title)
         
         return {
             "success": True,
@@ -422,6 +428,8 @@ Configuration:
     # Common arguments
     parser.add_argument("--output", 
                        help="Output path for generated image (default: auto-generated)")
+    parser.add_argument("--title",
+                       help="Custom title for the plot (if not specified, no title is shown; use any text for custom title)")
     parser.add_argument("--no-coordinates", action="store_true",
                        help="Disable coordinate labels on spawn points")
     parser.add_argument("--no-legend", action="store_true",
@@ -499,7 +507,8 @@ Configuration:
                 map_file_path=map_file_path,
                 event_name=args.event,
                 output_path=args.output,
-                mode=mode
+                mode=mode,
+                title=args.title
             )
         else:  # player-spawns
             # Get default spawn type from config if not specified
@@ -513,7 +522,8 @@ Configuration:
                 map_file_path=map_file_path,
                 spawn_type=spawn_type,
                 output_path=args.output,
-                mode=mode
+                mode=mode,
+                title=args.title
             )
         
         print(f"\nSuccess! Spawn map generated:")
