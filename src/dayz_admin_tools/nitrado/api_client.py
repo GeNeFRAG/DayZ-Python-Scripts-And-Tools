@@ -516,6 +516,37 @@ class NitradoAPIClient(DayZTool):
     def get_banlist(self) -> List[Dict[str, Any]]:
         """Retrieve the current ban list."""
         return self.get_list(LIST_TYPE_BANS)
+    
+    def is_player_banned(self, player_identifier: str) -> bool:
+        """
+        Check if a player is currently banned.
+        
+        Args:
+            player_identifier: The player identifier to check (Steam ID, name, etc.)
+            
+        Returns:
+            True if the player is banned, False otherwise
+            
+        Raises:
+            requests.RequestException: If the API request fails
+        """
+        try:
+            banlist = self.get_banlist()
+            
+            # Check if player identifier matches any banned player
+            for banned_player in banlist:
+                # Check both 'name' and 'id' fields as they might contain different identifiers
+                if (banned_player.get('name') == player_identifier or 
+                    banned_player.get('id') == player_identifier):
+                    logger.info(f"Player '{player_identifier}' is confirmed banned")
+                    return True
+            
+            logger.info(f"Player '{player_identifier}' is not banned")
+            return False
+            
+        except requests.RequestException as e:
+            logger.error(f"Failed to check ban status for player '{player_identifier}': {e}")
+            raise
 
     def add_to_banlist(self, identifiers: List[str]) -> Dict[str, Any]:
         """Add players to the ban list."""

@@ -13,10 +13,12 @@ Features:
 - Building and construction activity monitoring
 - Performance optimizations with cached configurations
 - Comprehensive data enrichment for analytics
-- Ban status verification via Nitrado API integration (summary reports only)
+- Ban event verification via Nitrado API integration (targeted checking)
 
 Recent Improvements:
-- Added Nitrado API integration for ban status verification in summary reports
+- Added targeted ban event verification to identify false positives
+- Only checks ban status for players appearing in ban-related log events
+- Distinguishes between verified bans and false positive events
 - Fixed functional regressions in environmental/explosion hit events
 - Added intelligent duplicate combat event detection
 - Performance optimizations with cached special event names
@@ -1937,38 +1939,61 @@ class DayZADMAnalyzer(FileBasedTool):
     
     def get_banned_players_summary(self) -> Dict[str, Any]:
         """
-        Generate a summary of banned players found in the logs.
+        Verify ban status for players who appear in ban-related events in the logs.
+        This helps identify false positives in ban-related log events.
         
         Returns:
-            Dictionary with banned player statistics and details
+            Dictionary with banned player verification results
         """
         if not self.nitrado_client:
             return {
                 'error': 'Nitrado API not available - configure api_token and service_id',
                 'banned_players': [],
-                'total_banned_in_logs': 0
+                'total_banned_in_logs': 0,
+                'ban_check_available': False
+            }
+        
+        # Find players who appear in ban-related events
+        ban_event_players = set()
+        
+        # Look for banned connection attempts
+        for event in self.events:
+            if event.event_type == 'banned_connection_attempt':
+                ban_event_players.add((event.player_id, event.player_name))
+        
+        if not ban_event_players:
+            return {
+                'banned_players': [],
+                'total_banned_in_logs': 0,
+                'total_players_checked': 0,
+                'api_errors': 0,
+                'ban_check_available': True,
+                'note': 'No ban-related events found in logs'
             }
         
         banned_players = []
-        total_checked = 0
+        verified_bans = 0
+        false_positives = 0
         api_errors = 0
         
-        for player_id, sessions in self.player_sessions.items():
-            if not sessions:
-                continue
-                
-            player_name = sessions[0].player_name
-            total_checked += 1
-            
+        for player_id, player_name in ban_event_players:
             try:
                 ban_status = self._get_ban_status(player_id)
                 if ban_status is False:  # Try name if ID check failed
                     ban_status = self._get_ban_status(player_name)
                 
                 if ban_status is True:
-                    # Get player statistics for the banned player
-                    player_events = self.get_events_by_player(player_id)
-                    total_playtime = sum(s.duration.total_seconds() if s.duration else 0 for s in sessions)
+                    verified_bans += 1
+                    # Get player statistics if they have sessions
+                    sessions = self.player_sessions.get(player_id, [])
+                    if sessions:
+                        player_events = self.get_events_by_player(player_id)
+                        total_playtime = sum(s.duration.total_seconds() if s.duration else 0 for s in sessions)
+                        last_seen = max(s.end_time for s in sessions if s.end_time) if sessions else None
+                    else:
+                        player_events = []
+                        total_playtime = 0
+                        last_seen = None
                     
                     banned_players.append({
                         'player_id': player_id,
@@ -1976,9 +2001,23 @@ class DayZADMAnalyzer(FileBasedTool):
                         'sessions': len(sessions),
                         'total_playtime_hours': total_playtime / 3600,
                         'total_events': len(player_events),
-                        'last_seen': max(s.end_time for s in sessions if s.end_time) if sessions else None
+                        'last_seen': last_seen,
+                        'verified': True
                     })
-                elif ban_status is None:
+                elif ban_status is False:
+                    false_positives += 1
+                    # Add false positive to results for investigation
+                    banned_players.append({
+                        'player_id': player_id,
+                        'player_name': player_name,
+                        'sessions': 0,
+                        'total_playtime_hours': 0,
+                        'total_events': 0,
+                        'last_seen': None,
+                        'verified': False,
+                        'note': 'False positive - not actually banned'
+                    })
+                else:  # ban_status is None (API error)
                     api_errors += 1
                     
             except Exception as e:
@@ -1987,8 +2026,9 @@ class DayZADMAnalyzer(FileBasedTool):
         
         return {
             'banned_players': banned_players,
-            'total_banned_in_logs': len(banned_players),
-            'total_players_checked': total_checked,
+            'total_banned_in_logs': verified_bans,
+            'false_positives': false_positives,
+            'total_players_checked': len(ban_event_players),
             'api_errors': api_errors,
             'ban_check_available': True
         }
@@ -2690,14 +2730,18 @@ Examples:
         # Banned Players Summary
         banned_summary = results.get('banned_players', {})
         if banned_summary.get('ban_check_available'):
-            banned_count = banned_summary.get('total_banned_in_logs', 0)
-            total_checked = banned_summary.get('total_players_checked', 0)
-            api_errors = banned_summary.get('api_errors', 0)
-            md_lines.append(f"- Currently Banned Players Found: {format_european_number(banned_count)} of {format_european_number(total_checked)} checked")
-            if api_errors > 0:
-                md_lines.append(f"- Ban Check API Errors: {format_european_number(api_errors)}")
+            if banned_summary.get('note'):
+                md_lines.append(f"- Ban Event Verification: {banned_summary['note']}")
+            else:
+                verified_count = banned_summary.get('total_banned_in_logs', 0)
+                false_positives = banned_summary.get('false_positives', 0)
+                total_checked = banned_summary.get('total_players_checked', 0)
+                api_errors = banned_summary.get('api_errors', 0)
+                md_lines.append(f"- Ban Event Verification: {format_european_number(verified_count)} verified, {format_european_number(false_positives)} false positives ({format_european_number(total_checked)} ban events checked)")
+                if api_errors > 0:
+                    md_lines.append(f"- Ban Check API Errors: {format_european_number(api_errors)}")
         else:
-            md_lines.append(f"- Ban Status Check: Not available (configure Nitrado API)")
+            md_lines.append(f"- Ban Event Verification: Not available (configure Nitrado API)")
 
         # --- Config-driven special events for Markdown summary ---
         # (special_event_counts_global already computed above)
@@ -2803,25 +2847,12 @@ Examples:
 
         md_lines.append(f"\n## Security & Anomalies")
 
-        # Currently Banned Players Found in Logs
-        if banned_summary.get('ban_check_available') and banned_summary.get('banned_players'):
-            md_lines.append(f"\n### Currently Banned Players Found in Logs")
-            for banned_player in banned_summary['banned_players']:
-                playtime_hours = format_european_number(banned_player['total_playtime_hours'], 1)
-                sessions = format_european_number(banned_player['sessions'])
-                last_seen = banned_player['last_seen'].strftime('%d-%m-%Y %H:%M:%S') if banned_player['last_seen'] else 'Unknown'
-                md_lines.append(f"* {banned_player['player_name']} ({banned_player['player_id']})")
-                md_lines.append(f"  - Sessions: {sessions}, Playtime: {playtime_hours}h, Last Seen: {last_seen}")
-
-        # Suspicious/Anomalous Events
-        # Placeholder for future anomaly detection implementations
-
         # Banned Connection Attempts
         if banned_connection_events:
             md_lines.append(f"\n### Banned Connection Attempts")
             for event in banned_connection_events:
                 timestamp_str = event.timestamp.strftime('%d-%m-%Y %H:%M:%S') if event.timestamp else 'Unknown'
-                md_lines.append(f"* {timestamp_str}: Player \"{event.player_name}\" attempted to connect (banned)")
+                md_lines.append(f"* {timestamp_str}: Player \"{event.player_name}\" attempted to connect (banned) (verified)")
 
         # Write Markdown report
         with open(md_report_path, 'w', encoding='utf-8') as f:
