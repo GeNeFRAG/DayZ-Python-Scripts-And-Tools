@@ -261,7 +261,8 @@ class TypesToExcelTool(XMLTool):
         # Add usage values
         usage_cols = [col for col in row.index if col.startswith('usage_')]
         for i, col in enumerate(usage_cols):
-            if pd.notna(row[col]) and row[col] == 'X':
+            col_value = row.get(col)
+            if pd.notna(col_value) and col_value == 'X':
                 if use_lxml and HAS_LXML:
                     usage_elem = LxmlET.SubElement(type_elem, 'usage')
                     usage_elem.tail = '\n\t\t'
@@ -273,9 +274,10 @@ class TypesToExcelTool(XMLTool):
         # Add tier values
         tier_cols = [col for col in row.index if col.startswith('tier_')]
         for i, col in enumerate(tier_cols):
-            is_last_element = i == len(tier_cols) - 1 and not any(pd.notna(row[c]) and row[c] == 'X' for c in usage_cols)
+            is_last_element = i == len(tier_cols) - 1 and not any(pd.notna(row.get(c)) and row.get(c) == 'X' for c in usage_cols)
             
-            if pd.notna(row[col]) and row[col] == 'X':
+            col_value = row.get(col)
+            if pd.notna(col_value) and col_value == 'X':
                 if use_lxml and HAS_LXML:
                     value_elem = LxmlET.SubElement(type_elem, 'value')
                     if not is_last_element:
