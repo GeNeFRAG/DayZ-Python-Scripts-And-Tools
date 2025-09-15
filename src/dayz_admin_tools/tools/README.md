@@ -357,6 +357,81 @@ dayz-search-overtime --profile myserver
 - `--profile`: Configuration profile to use (optional, uses default if not specified)
 - `--console`: Log detailed output summary (optional)
 
+### Event Spawn Plotter
+
+**Script**: `event_spawn_plotter.py`  
+**CLI Command**: `dayz-event-spawn-plotter`
+
+Visualizes event spawn positions from `cfgeventspawns.xml` or player spawn points from `cfgplayerspawnpoints.xml` files by plotting them on map images with coordinate annotations.
+
+**Features**:
+- Plot event spawn positions from `cfgeventspawns.xml` files
+- Plot player spawn points from `cfgplayerspawnpoints.xml` files (fresh, hop, travel spawn types)
+- Support for grouped player spawns (e.g., hop_Balota, travel_Cherno)
+- Coordinate annotations and legends
+- Configurable marker styles and map dimensions
+- Auto-generated timestamped output files
+- List available events and spawn types
+
+**Usage**:
+
+*Event Spawns:*
+```bash
+# Plot specific event spawns
+dayz-event-spawn-plotter --event StaticHeliCrash
+
+# Plot events with custom output path
+dayz-event-spawn-plotter --event StaticContaminatedArea --output contaminated_areas.jpg
+
+# List all available events
+dayz-event-spawn-plotter --list-events
+
+# Disable coordinate labels and legend
+dayz-event-spawn-plotter --event StaticMildrop --no-coordinates --no-legend
+```
+
+*Player Spawns:*
+```bash
+# Plot fresh player spawns (uses default from config)
+dayz-event-spawn-plotter --player-spawns
+
+# Plot specific spawn type
+dayz-event-spawn-plotter --player-spawns --spawn-type fresh
+dayz-event-spawn-plotter --player-spawns --spawn-type hop
+dayz-event-spawn-plotter --player-spawns --spawn-type travel
+
+# Plot grouped spawns (e.g., hop spawns in specific locations)
+dayz-event-spawn-plotter --player-spawns --spawn-type hop_Balota
+dayz-event-spawn-plotter --player-spawns --spawn-type travel_Cherno
+
+# List all available player spawn types
+dayz-event-spawn-plotter --player-spawns --list-spawns
+
+# Custom output with specific spawn type
+dayz-event-spawn-plotter --player-spawns --spawn-type fresh --output fresh_spawns.jpg
+```
+
+**Parameters**:
+- `--event`: Name of the event to plot (for event mode)
+- `--player-spawns`: Switch to player spawn mode instead of event spawns
+- `--spawn-type`: Name of the spawn type to plot (for player-spawns mode, optional - uses config default)
+- `--output`: Output path for generated image (optional, auto-generated if not specified)
+- `--list-events`: List all available events in the XML file and exit
+- `--list-spawns`: List all available player spawn types and exit
+- `--no-coordinates`: Disable coordinate labels on spawn points
+- `--no-legend`: Disable legend display
+- `--profile`: Configuration profile to use (optional, uses default if not specified)
+- `--console`: Log detailed output summary (optional)
+
+**Configuration Requirements**:
+- `paths.eventspawns_file`: Path to cfgeventspawns.xml file (for event mode)
+- `paths.player_spawns_file`: Path to cfgplayerspawnpoints.xml file (for player-spawns mode)
+- `event_spawn_plotter.map_file`: Path to map image file
+- `event_spawn_plotter.map_width/map_height`: Map dimensions in meters (optional, default: 15360)
+- `event_spawn_plotter.show_coordinates`: Show coordinate labels (optional, default: true)
+- `event_spawn_plotter.show_legend`: Show legend (optional, default: true)
+- `event_spawn_plotter.default_spawn_type`: Default spawn type for player-spawns mode (optional, default: fresh)
+
 ## Configuration
 
 All tools use the configuration system provided by the `Config` class. Configuration profiles are stored in `src/config/profiles/` and can be specified using the `--profile` argument. 

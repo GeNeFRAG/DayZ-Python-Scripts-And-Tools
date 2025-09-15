@@ -16,6 +16,8 @@ setup(
         "numpy>=1.19.0",
         "pandas>=1.0.0",
         "openpyxl>=3.0.0",
+        "matplotlib>=3.0.0",
+        "Pillow>=8.0.0",
     ],
     extras_require={
         "xml": ["lxml>=4.6.0"],
@@ -29,6 +31,7 @@ setup(
             "dayz-kill-tracker=dayz_admin_tools.tools.kill_tracker:main",
             "dayz-player-list-manager=dayz_admin_tools.tools.player_list_manager:main",
             "dayz-adm-analyzer=dayz_admin_tools.tools.adm_analyzer:main",
+            "dayz-event-spawn-plotter=dayz_admin_tools.tools.event_spawn_plotter:main",
             # XML Types Tools
             "dayz-compare-types=dayz_admin_tools.xml.types.compare_types:main",
             "dayz-change-min-max=dayz_admin_tools.xml.types.change_min_max:main",

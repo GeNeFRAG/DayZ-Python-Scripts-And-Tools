@@ -41,6 +41,18 @@
     },
     "default_output_file": "event_loot.csv"
   },
+  "event_spawn_plotter": {
+    "map_file": "/path/to/your/map.jpg",
+    "map_width": 15360,
+    "map_height": 15360,
+    "output_dpi": 300,
+    "marker_size": 50,
+    "marker_color": "red",
+    "marker_alpha": 0.7,
+    "show_coordinates": true,
+    "show_legend": true,
+    "default_spawn_type": "fresh"
+  },
   "paths": {
     "types_file": "/path/to/your/types.xml",
     "types_file_ref": "/path/to/your/types_ref.xml",
@@ -48,7 +60,8 @@
     "cfglimitsdefinition_file": "/path/to/your/cfglimitsdefinition.xml",
     "events_file": "/path/to/your/events.xml",
     "eventspawns_file": "/path/to/your/cfgeventspawns.xml",
-    "event_groups_file": "/path/to/your/cfgeventgroups.xml"
+    "event_groups_file": "/path/to/your/cfgeventgroups.xml",
+    "player_spawns_file": "/path/to/your/cfgplayerspawnpoints.xml"
   },
   "special_events": {
     "enabled": true,

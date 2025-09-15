@@ -10,6 +10,7 @@ A Python package for DayZ server administration, providing tools for server mana
 - **Player Management**: Advanced player list management (ban lists, whitelist, priority lists) via Nitrado API
 - **JSON Processing**: Utilities for working with DayZ's JSON configuration files like cfgEffectArea.json and object spawner files
 - **Player Tracking**: Advanced tools for position tracking, duping detection, and kill analysis
+- **Event Visualization**: Plot event spawn positions from cfgeventspawns.xml files onto map images with detailed annotations
 - **Nitrado Integration**: Direct API integration for Nitrado-hosted DayZ servers with file and player management
 - **Configuration Management**: Robust configuration system supporting multiple server profiles and credentials
 - **Configurable Special/Other Event Extraction**: The ADM Log Analyzer now supports fully configurable special/custom event extraction and reporting. Define any number of custom events in your config JSON (see `special_events` section) and they will be extracted, counted per player, and included in all reports.
@@ -22,7 +23,12 @@ A Python package for DayZ server administration, providing tools for server mana
 ```bash
 # From the repository root
 pip install -e .
+
+# For visualization features (event spawn plotter), ensure matplotlib and Pillow are installed:
+pip install matplotlib Pillow
 ```
+
+Note: The event spawn plotter requires `matplotlib` and `Pillow` for image plotting functionality. These are included in the default installation.
 
 ## Package Structure
 
@@ -105,6 +111,7 @@ All configured special events will be extracted, counted per player, and include
 
 - **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API and analyze banned connection attempts from RPT logs (`dayz-player-list-manager`)
 - **ADM Log Analyzer**: Comprehensive analysis of DayZ AdminLog (ADM) files for player and combat statistics, building activity, and more. Generates Markdown summary reports (`dayz-adm-analyzer`)
+- **Event Spawn Plotter**: Visualize event spawn positions from cfgeventspawns.xml files on map images with coordinate annotations (`dayz-event-spawn-plotter`)
 
 
 ### Log Tools
@@ -200,6 +207,12 @@ dayz-duping-detector --proximity-threshold 10 --time-threshold 30
 
 # Track player kills
 dayz-kill-tracker --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
+
+# Visualize event spawn locations on map
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticHeliCrash
+
+# List available events in XML file
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --list-events
 ```
 ### ADM Log Analyzer Example
 
@@ -217,6 +230,30 @@ The Markdown report includes:
 - Top damage
 
 The report is saved in the configured output directory (see `general.output_path` in your config).
+
+### Event Spawn Plotter Example
+
+Visualize event spawn positions from cfgeventspawns.xml files on a map image:
+
+```bash
+# Plot helicopter crash sites on map
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticHeliCrash
+
+# Plot contaminated areas with custom output file
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticContaminatedArea_Custom --output contaminated_zones.jpg
+
+# List all available events in the XML file
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --list-events
+
+# Use custom map dimensions for non-Chernarus maps
+dayz-event-spawn-plotter --xml cfgeventspawns.xml --map livonia_map.jpg --event StaticHeliCrash --map-width 12800 --map-height 12800
+```
+
+The Event Spawn Plotter generates high-quality images showing:
+- Event spawn positions as colored markers with coordinate annotations
+- Event name and spawn count in the legend
+- Clear visualization of spawn distribution across the map
+- Support for all DayZ maps with configurable dimensions
 
 ### JSON Configuration
 
