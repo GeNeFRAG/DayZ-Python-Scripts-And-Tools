@@ -27,35 +27,73 @@ class EventSpawnPlotterTool(XMLTool):
     visualizes them on a map using matplotlib and PIL.
     """
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None, map_width: int = None, map_height: int = None, 
-                 show_coordinates: bool = None, show_legend: bool = None):
+    # Default map dimensions (Chernarus)
+    DEFAULT_MAP_WIDTH = 15360
+    DEFAULT_MAP_HEIGHT = 15360
+    
+    # Default plotting configuration
+    DEFAULT_OUTPUT_DPI = 300
+    DEFAULT_MARKER_SIZE = 50
+    DEFAULT_MARKER_COLOR = 'red'
+    DEFAULT_MARKER_ALPHA = 0.7
+    DEFAULT_SHOW_COORDINATES = True
+    DEFAULT_SHOW_LEGEND = True
+    DEFAULT_SPAWN_TYPE = 'fresh'
+    
+    # Plotting constants
+    PLOT_FIGURE_SIZE = (12, 12)
+    ANNOTATION_OFFSET_X = 20
+    ANNOTATION_OFFSET_Y = -20
+    ANNOTATION_FONT_SIZE = 6
+    MARKER_EDGE_WIDTH = 0.5
+    
+    def __init__(self, 
+                 config: Optional[Dict[str, Any]] = None, 
+                 map_width: int = None, 
+                 map_height: int = None, 
+                 show_coordinates: bool = None, 
+                 show_legend: bool = None):
         """
         Initialize the Event Spawn Plotter Tool.
         
         Args:
             config: Configuration dictionary from Config class
-            map_width: Width of the map in meters (default: from config or 15360 for Chernarus)
-            map_height: Height of the map in meters (default: from config or 15360 for Chernarus)
-            show_coordinates: Whether to show coordinate labels (default: from config or True)
-            show_legend: Whether to show legend (default: from config or True)
+            map_width: Width of the map in meters (default: from config or DEFAULT_MAP_WIDTH)
+            map_height: Height of the map in meters (default: from config or DEFAULT_MAP_HEIGHT)
+            show_coordinates: Whether to show coordinate labels (default: from config or DEFAULT_SHOW_COORDINATES)
+            show_legend: Whether to show legend (default: from config or DEFAULT_SHOW_LEGEND)
         """
         super().__init__(config)
         self.initialize_directories()
         
-        # Get map dimensions from config or use provided/default values
-        self.map_width = map_width or int(self.get_config('event_spawn_plotter.map_width', 15360))
-        self.map_height = map_height or int(self.get_config('event_spawn_plotter.map_height', 15360))
+        self._setup_map_dimensions(map_width, map_height)
+        self._setup_plotting_config(show_coordinates, show_legend)
+    
+    def _setup_map_dimensions(self, map_width: Optional[int], map_height: Optional[int]) -> None:
+        """Setup map dimensions from parameters or config."""
+        self.map_width = map_width or int(self.get_config('event_spawn_plotter.map_width', self.DEFAULT_MAP_WIDTH))
+        self.map_height = map_height or int(self.get_config('event_spawn_plotter.map_height', self.DEFAULT_MAP_HEIGHT))
         
-        # Get plotting configuration from config
+        # Validate map dimensions
+        if self.map_width <= 0 or self.map_height <= 0:
+            raise ValueError(f"Map dimensions must be positive integers: "
+                           f"width={self.map_width}, height={self.map_height}")
+        
+        if self.map_width > 50000 or self.map_height > 50000:
+            logger.warning(f"Large map dimensions detected: {self.map_width}x{self.map_height}. "
+                          "This may cause performance issues.")
+    
+    def _setup_plotting_config(self, show_coordinates: Optional[bool], show_legend: Optional[bool]) -> None:
+        """Setup plotting configuration from parameters or config."""
         esp_config = self.config.get('event_spawn_plotter', {}) if self.config else {}
         
-        self.default_output_dpi = int(esp_config.get('output_dpi', 300))
-        self.default_marker_size = int(esp_config.get('marker_size', 50))
-        self.default_marker_color = esp_config.get('marker_color', 'red')
-        self.default_marker_alpha = float(esp_config.get('marker_alpha', 0.7))
+        self.default_output_dpi = int(esp_config.get('output_dpi', self.DEFAULT_OUTPUT_DPI))
+        self.default_marker_size = int(esp_config.get('marker_size', self.DEFAULT_MARKER_SIZE))
+        self.default_marker_color = esp_config.get('marker_color', self.DEFAULT_MARKER_COLOR)
+        self.default_marker_alpha = float(esp_config.get('marker_alpha', self.DEFAULT_MARKER_ALPHA))
         
-        coords_from_config = bool(esp_config.get('show_coordinates', True))
-        legend_from_config = bool(esp_config.get('show_legend', True))
+        coords_from_config = bool(esp_config.get('show_coordinates', self.DEFAULT_SHOW_COORDINATES))
+        legend_from_config = bool(esp_config.get('show_legend', self.DEFAULT_SHOW_LEGEND))
         
         self.show_coordinates = show_coordinates if show_coordinates is not None else coords_from_config
         self.show_legend = show_legend if show_legend is not None else legend_from_config
@@ -186,8 +224,12 @@ class EventSpawnPlotterTool(XMLTool):
         logger.info(f"Loaded {len(spawn_types)} spawn type configurations from {resolved_path}")
         return spawn_types
     
-    def plot_event_positions(self, map_image_path: str, event_positions: List[Tuple[float, float]], 
-                           event_name: str, output_path: str = None, title: str = None) -> str:
+    def plot_event_positions(self, 
+                           map_image_path: str, 
+                           event_positions: List[Tuple[float, float]], 
+                           event_name: str, 
+                           output_path: str = None, 
+                           title: str = None) -> str:
         """
         Plot event positions on the map image.
         
@@ -204,20 +246,53 @@ class EventSpawnPlotterTool(XMLTool):
         Raises:
             FileNotFoundError: If the map image file doesn't exist
         """
+        map_img = self._load_map_image(map_image_path)
+        x_pixels, y_pixels = self._convert_coordinates_to_pixels(event_positions, map_img.size)
+        
+        self._create_plot(map_img, x_pixels, y_pixels, event_positions, event_name, title)
+        
+        output_path = self._generate_output_path(output_path, event_name)
+        self._save_plot(output_path)
+        
+        logger.info(f"Map saved to: {output_path}")
+        return output_path
+    
+    def _load_map_image(self, map_image_path: str) -> Image.Image:
+        """Load and validate the map image."""
         resolved_map_path = self.resolve_path(map_image_path)
         if not Path(resolved_map_path).exists():
             raise FileNotFoundError(f"Map image not found: {resolved_map_path}")
         
+        # Validate file extension
+        valid_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.tif'}
+        file_ext = Path(resolved_map_path).suffix.lower()
+        if file_ext not in valid_extensions:
+            raise ValueError(f"Unsupported image format '{file_ext}'. "
+                           f"Supported formats: {', '.join(sorted(valid_extensions))}")
+        
         try:
             map_img = Image.open(resolved_map_path)
+            # Validate image dimensions
+            if map_img.size[0] < 100 or map_img.size[1] < 100:
+                raise ValueError(f"Image too small: {map_img.size}. Minimum size is 100x100 pixels.")
+            return map_img
         except Exception as e:
             raise Exception(f"Failed to load map image: {e}")
-        
-        img_width, img_height = map_img.size
-        
-        # Convert coordinates to pixel positions
+    
+    def _convert_coordinates_to_pixels(self, 
+                                     event_positions: List[Tuple[float, float]], 
+                                     img_size: Tuple[int, int]) -> Tuple[List[int], List[int]]:
+        """Convert game coordinates to pixel positions."""
+        img_width, img_height = img_size
         x_pixels, y_pixels = [], []
+        
         for x, z in event_positions:
+            # Validate coordinates are within map bounds
+            if not (0 <= x <= self.map_width):
+                logger.warning(f"X coordinate {x} is outside map bounds (0, {self.map_width})")
+            if not (0 <= z <= self.map_height):
+                logger.warning(f"Z coordinate {z} is outside map bounds (0, {self.map_height})")
+            
             x_ratio = x / self.map_width
             z_ratio = z / self.map_height
             x_pixel = int(x_ratio * img_width)
@@ -225,8 +300,17 @@ class EventSpawnPlotterTool(XMLTool):
             x_pixels.append(x_pixel)
             y_pixels.append(y_pixel)
         
-        # Create the plot
-        plt.figure(figsize=(12, 12))
+        return x_pixels, y_pixels
+    
+    def _create_plot(self, 
+                    map_img: Image.Image, 
+                    x_pixels: List[int], 
+                    y_pixels: List[int], 
+                    event_positions: List[Tuple[float, float]], 
+                    event_name: str, 
+                    title: str) -> None:
+        """Create the matplotlib plot with markers and annotations."""
+        plt.figure(figsize=self.PLOT_FIGURE_SIZE)
         plt.imshow(map_img)
         
         # Plot points with a distinct color and marker
@@ -235,7 +319,7 @@ class EventSpawnPlotterTool(XMLTool):
             'alpha': self.default_marker_alpha,
             's': self.default_marker_size,
             'edgecolors': 'black',
-            'linewidth': 0.5
+            'linewidth': self.MARKER_EDGE_WIDTH
         }
         
         # Add label only if legend is enabled
@@ -246,42 +330,45 @@ class EventSpawnPlotterTool(XMLTool):
         
         # Add coordinate annotations for each point if enabled
         if self.show_coordinates:
-            for i, (x, z) in enumerate(event_positions):
-                plt.annotate(f'({x:.0f}, {z:.0f})', 
-                            xy=(x_pixels[i], y_pixels[i]), 
-                            xytext=(x_pixels[i] + 20, y_pixels[i] - 20), 
-                            bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=0.5, alpha=0.8),
-                            fontsize=6, ha="left", va="top",
-                            arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+            self._add_coordinate_annotations(x_pixels, y_pixels, event_positions)
         
         # Set title and legend
         if title:
-            # Use custom title (if not empty string)
             plt.title(title, fontsize=14, fontweight='bold')
-        # If title is None or empty string, don't set any title
         
         if self.show_legend:
             plt.legend(loc='upper right')
         plt.axis('off')
-        
-        # Generate output filename if not provided
+    
+    def _add_coordinate_annotations(self, 
+                                  x_pixels: List[int], 
+                                  y_pixels: List[int], 
+                                  event_positions: List[Tuple[float, float]]) -> None:
+        """Add coordinate annotations to each spawn point."""
+        for i, (x, z) in enumerate(event_positions):
+            plt.annotate(f'({x:.0f}, {z:.0f})', 
+                        xy=(x_pixels[i], y_pixels[i]), 
+                        xytext=(x_pixels[i] + self.ANNOTATION_OFFSET_X, 
+                               y_pixels[i] + self.ANNOTATION_OFFSET_Y), 
+                        bbox=dict(boxstyle="round,pad=0.3", fc="white", ec="black", lw=0.5, alpha=0.8),
+                        fontsize=self.ANNOTATION_FONT_SIZE, ha="left", va="top",
+                        arrowprops=dict(arrowstyle='->', connectionstyle='arc3,rad=0'))
+    
+    def _generate_output_path(self, output_path: Optional[str], event_name: str) -> str:
+        """Generate output file path if not provided."""
         if output_path is None:
             safe_event_name = "".join(c for c in event_name if c.isalnum() or c in (' ', '-', '_')).rstrip()
             base_name = f"event_spawn_map_{safe_event_name.replace(' ', '_')}"
             output_filename = self.generate_timestamped_filename(base_name, "jpg")
-            output_path = os.path.join(self.output_dir, output_filename)
+            return os.path.join(self.output_dir, output_filename)
         else:
-            output_path = self.resolve_path(output_path)
-        
-        # Ensure output directory exists
+            return self.resolve_path(output_path)
+    
+    def _save_plot(self, output_path: str) -> None:
+        """Save the plot to the specified path."""
         self.ensure_dir(os.path.dirname(output_path))
-        
-        # Save the plot
         plt.savefig(output_path, dpi=self.default_output_dpi, bbox_inches='tight', facecolor='white')
         plt.close()  # Close the figure to free memory
-        
-        logger.info(f"Map saved to: {output_path}")
-        return output_path
     
     def get_available_events(self, xml_file_path: str) -> List[str]:
         """
@@ -309,9 +396,14 @@ class EventSpawnPlotterTool(XMLTool):
         spawns = self.read_player_spawns(xml_file_path)
         return list(spawns.keys())
     
-    def run(self, xml_file_path: str, map_file_path: str, event_name: str = None, 
-            spawn_type: str = None, output_path: str = None, 
-            mode: str = "events", title: str = None) -> Dict[str, Any]:
+    def run(self, 
+            xml_file_path: str, 
+            map_file_path: str, 
+            event_name: str = None, 
+            spawn_type: str = None, 
+            output_path: str = None, 
+            mode: str = "events", 
+            title: str = None) -> Dict[str, Any]:
         """
         Complete workflow to plot spawns from XML file onto map.
         
@@ -341,6 +433,9 @@ class EventSpawnPlotterTool(XMLTool):
                 raise ValueError(f"Event '{event_name}' not found. Available events: {available_events}")
             
             positions = events[event_name]
+            if not positions:
+                raise ValueError(f"Event '{event_name}' has no spawn positions defined")
+            
             plot_name = event_name
             logger.info(f"Plotting {len(positions)} spawn positions for event '{event_name}'")
             
@@ -355,6 +450,9 @@ class EventSpawnPlotterTool(XMLTool):
                 raise ValueError(f"Spawn type '{spawn_type}' not found. Available spawn types: {available_spawns}")
             
             positions = spawns[spawn_type]
+            if not positions:
+                raise ValueError(f"Spawn type '{spawn_type}' has no spawn positions defined")
+            
             plot_name = f"Player Spawns: {spawn_type}"
             logger.info(f"Plotting {len(positions)} spawn positions for player spawn type '{spawn_type}'")
             
@@ -378,7 +476,8 @@ class EventSpawnPlotterTool(XMLTool):
 def main():
     """Main function for command-line interface."""
     parser = argparse.ArgumentParser(
-        description="Plot event spawn positions from cfgeventspawns.xml or player spawn positions from cfgplayerspawnpoints.xml onto a map image",
+        description=("Plot event spawn positions from cfgeventspawns.xml or player spawn positions "
+                    "from cfgplayerspawnpoints.xml onto a map image"),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -429,7 +528,8 @@ Configuration:
     parser.add_argument("--output", 
                        help="Output path for generated image (default: auto-generated)")
     parser.add_argument("--title",
-                       help="Custom title for the plot (if not specified, no title is shown; use any text for custom title)")
+                       help=("Custom title for the plot (if not specified, no title is shown; "
+                            "use any text for custom title)"))
     parser.add_argument("--no-coordinates", action="store_true",
                        help="Disable coordinate labels on spawn points")
     parser.add_argument("--no-legend", action="store_true",
@@ -514,7 +614,7 @@ Configuration:
             # Get default spawn type from config if not specified
             spawn_type = args.spawn_type
             if not spawn_type:
-                spawn_type = esp_config.get('default_spawn_type', 'fresh')
+                spawn_type = esp_config.get('default_spawn_type', EventSpawnPlotterTool.DEFAULT_SPAWN_TYPE)
                 logger.info(f"Using default spawn type from config: {spawn_type}")
             
             plot_result = tool.run(
