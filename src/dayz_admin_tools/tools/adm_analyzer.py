@@ -139,7 +139,7 @@ class PlayerSession:
             return 0.0
         
         total_distance = 0.0
-        max_reasonable_speed = 500.0  # 500 m/min = 30 km/h (fast vehicle speed)
+        max_reasonable_speed = DayZADMAnalyzer.MAX_REASONABLE_SPEED_M_PER_MIN  # 30 km/h vehicle speed
         
         for i in range(1, len(self.positions)):
             prev_timestamp = self.positions[i-1][0]
@@ -153,7 +153,7 @@ class PlayerSession:
                        (curr_pos[2] - prev_pos[2]) ** 2) ** 0.5
             
             # Calculate time difference in minutes
-            time_diff = (curr_timestamp - prev_timestamp).total_seconds() / 60.0
+            time_diff = (curr_timestamp - prev_timestamp).total_seconds() / DayZADMAnalyzer.SECONDS_PER_MINUTE
             
             # Skip if time difference is too small to avoid division by zero
             if time_diff < 0.1:  # Less than 6 seconds
@@ -246,7 +246,10 @@ class DayZADMParser:
         'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar', 'MeleeSoft'
     }  # Cached set for efficient melee weapon detection
     
-    def __init__(self, config: Optional[Dict[str, Any]] = None, start_datetime: Optional[datetime] = None, end_datetime: Optional[datetime] = None):
+    def __init__(self, 
+                 config: Optional[Dict[str, Any]] = None, 
+                 start_datetime: Optional[datetime] = None, 
+                 end_datetime: Optional[datetime] = None):
         """
         Initialize the parser with configuration.
         
@@ -445,7 +448,7 @@ class DayZADMParser:
                         debug_file.write("\n")
                     
                     if len(summary.malformed_samples) < max_malformed_samples:
-                        sample = f"Line {line_number}: {parse_result.raw_line[:100]}{'...' if len(parse_result.raw_line) > 100 else ''}"
+                        sample = f"Line {line_number}: {parse_result.raw_line[:self.LINE_SAMPLE_MAX_LENGTH]}{'...' if len(parse_result.raw_line) > self.LINE_SAMPLE_MAX_LENGTH else ''}"
                         summary.malformed_samples.append(sample)
         
         # Close debug file if it was opened
@@ -917,8 +920,8 @@ class DayZADMParser:
                 self._recent_combat_events = []
             self._recent_combat_events.append(combat_event)
             # Keep only recent events to prevent memory bloat
-            if len(self._recent_combat_events) > 100:
-                self._recent_combat_events = self._recent_combat_events[-50:]
+            if len(self._recent_combat_events) > self.MAX_RECENT_COMBAT_EVENTS:
+                self._recent_combat_events = self._recent_combat_events[-self.TRIMMED_RECENT_EVENTS_SIZE:]
         
         event = PlayerEvent(
             timestamp=timestamp,
@@ -996,8 +999,8 @@ class DayZADMParser:
                 self._recent_combat_events = []
             self._recent_combat_events.append(ce)
             # Keep only recent events to prevent memory bloat
-            if len(self._recent_combat_events) > 100:
-                self._recent_combat_events = self._recent_combat_events[-50:]
+            if len(self._recent_combat_events) > self.MAX_RECENT_COMBAT_EVENTS:
+                self._recent_combat_events = self._recent_combat_events[-self.TRIMMED_RECENT_EVENTS_SIZE:]
 
         event = PlayerEvent(
             timestamp=timestamp,
@@ -1489,6 +1492,27 @@ class DayZADMAnalyzer(FileBasedTool):
     - Enhanced kill event tracking for comprehensive PvP analytics
     """
     
+    # Time and duration constants
+    ENGAGEMENT_TIMEOUT_SECONDS = 60
+    DUPLICATE_EVENT_WINDOW_SECONDS = 60
+    SECONDS_PER_MINUTE = 60.0
+    SECONDS_PER_HOUR = 3600
+    
+    # Collection size limits
+    MAX_RECENT_COMBAT_EVENTS = 100
+    TRIMMED_RECENT_EVENTS_SIZE = 50
+    DEFAULT_MAX_MALFORMED_SAMPLES = 10
+    
+    # Analysis constants
+    COMBAT_GRID_SIZE_METERS = 500
+    TOP_RESULTS_LIMIT = 10
+    METERS_PER_KILOMETER = 1000
+    LINE_SAMPLE_MAX_LENGTH = 100
+    PERCENTAGE_MULTIPLIER = 100
+    
+    # Speed thresholds
+    MAX_REASONABLE_SPEED_M_PER_MIN = 500.0  # 30 km/h vehicle speed
+    
     def __init__(self, config: Optional[Dict[str, Any]] = None):
         """Initialize the ADM analyzer."""
         super().__init__(config)
@@ -1780,7 +1804,7 @@ class DayZADMAnalyzer(FileBasedTool):
         
         error_rate = 0.0
         if self.parse_summary.total_lines > 0:
-            error_rate = (self.parse_summary.malformed_lines / self.parse_summary.total_lines) * 100
+            error_rate = (self.parse_summary.malformed_lines / self.parse_summary.total_lines) * self.PERCENTAGE_MULTIPLIER
         
         return {
             'malformed_lines': self.parse_summary.malformed_lines,
@@ -1848,7 +1872,7 @@ class DayZADMAnalyzer(FileBasedTool):
             for prev_victim_id, prev_time in unique_kill_engagements:
                 if prev_victim_id == victim_id:
                     time_diff = (current_time - prev_time).total_seconds()
-                    if time_diff <= 60:  # Same engagement
+                    if time_diff <= self.ENGAGEMENT_TIMEOUT_SECONDS:  # Same engagement
                         is_new_engagement = False
                         break
             
@@ -1910,8 +1934,8 @@ class DayZADMAnalyzer(FileBasedTool):
             stats['players'][player_id] = {
                 'name': player_name,
                 'sessions': len(sessions),
-                'total_playtime_hours': total_playtime / 3600,
-                'avg_session_time_minutes': (total_playtime / len(sessions) / 60) if sessions else 0,
+                'total_playtime_hours': total_playtime / self.SECONDS_PER_HOUR,
+                'avg_session_time_minutes': (total_playtime / len(sessions) / self.SECONDS_PER_MINUTE) if sessions else 0,
                 'total_distance_traveled': total_distance,
                 'deaths': deaths,
                 'suicides': suicides,
@@ -1921,7 +1945,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 'hits_taken (PvP)': hits_taken_pvp,
                 'damage_dealt (PvP)': damage_dealt_pvp,
                 'damage_taken (PvP)': damage_taken_pvp,
-                'accuracy (PvP)': (kills_pvp / max(hits_dealt_pvp, 1)) * 100 if hits_dealt_pvp > 0 else 0,
+                'accuracy (PvP)': (kills_pvp / max(hits_dealt_pvp, 1)) * self.PERCENTAGE_MULTIPLIER if hits_dealt_pvp > 0 else 0,
                 'emotes': emotes,
                 'tripwire_hits': tripwire_hits,
                 'combat_logs': combat_logs,
@@ -1999,7 +2023,7 @@ class DayZADMAnalyzer(FileBasedTool):
                         'player_id': player_id,
                         'player_name': player_name,
                         'sessions': len(sessions),
-                        'total_playtime_hours': total_playtime / 3600,
+                        'total_playtime_hours': total_playtime / self.SECONDS_PER_HOUR,
                         'total_events': len(player_events),
                         'last_seen': last_seen,
                         'verified': True
@@ -2054,13 +2078,13 @@ class DayZADMAnalyzer(FileBasedTool):
         hotspots = defaultdict(int)
         for event in self.combat_events:
             if event.victim_pos:
-                # Create 500m grid squares
-                grid_x = int(event.victim_pos[0] // 500) * 500
-                grid_y = int(event.victim_pos[1] // 500) * 500
+                # Create grid squares for combat hotspot analysis
+                grid_x = int(event.victim_pos[0] // self.COMBAT_GRID_SIZE_METERS) * self.COMBAT_GRID_SIZE_METERS
+                grid_y = int(event.victim_pos[1] // self.COMBAT_GRID_SIZE_METERS) * self.COMBAT_GRID_SIZE_METERS
                 hotspots[(grid_x, grid_y)] += 1
         
-        # Top 10 hotspots
-        stats['combat_hotspots'] = dict(sorted(hotspots.items(), key=lambda x: x[1], reverse=True)[:10])
+        # Top hotspots
+        stats['combat_hotspots'] = dict(sorted(hotspots.items(), key=lambda x: x[1], reverse=True)[:self.TOP_RESULTS_LIMIT])
         
         # Deadliest weapons (by kill rate)
         weapon_stats = defaultdict(lambda: {'hits': 0, 'kills': 0, 'total_damage': 0})
@@ -2071,7 +2095,7 @@ class DayZADMAnalyzer(FileBasedTool):
                 weapon_stats[event.weapon]['kills'] += 1
         
         for weapon, data in weapon_stats.items():
-            kill_rate = (data['kills'] / data['hits']) * 100 if data['hits'] > 0 else 0
+            kill_rate = (data['kills'] / data['hits']) * self.PERCENTAGE_MULTIPLIER if data['hits'] > 0 else 0
             avg_damage = data['total_damage'] / data['hits'] if data['hits'] > 0 else 0
             stats['deadliest_weapons'][weapon] = {
                 'kill_rate': kill_rate,
@@ -2217,7 +2241,7 @@ class DayZADMAnalyzer(FileBasedTool):
                         event.player_name,
                         from_pos[0], from_pos[1], from_pos[2],
                         to_pos[0], to_pos[1], to_pos[2],
-                        round(details.get('teleport_distance', 0) / 1000, 3),  # Convert to kilometers
+                        round(details.get('teleport_distance', 0) / self.METERS_PER_KILOMETER, 3),  # Convert to kilometers
                         details.get('reason', ''),
                         details.get('restricted_area', '')
                     ])
@@ -2682,7 +2706,7 @@ Examples:
                 total_distance_all_players += stats.get('total_distance_traveled', 0)
         
         # Convert meters to kilometers
-        total_distance_km = total_distance_all_players / 1000
+        total_distance_km = total_distance_all_players / DayZADMAnalyzer.METERS_PER_KILOMETER
         
         # Count special events globally (computed once and reused)
         special_event_counts_global = {name: 0 for name in analyzer._special_event_names}
@@ -2709,7 +2733,7 @@ Examples:
         avg_distance = 0
         if teleport_events:
             total_distance = sum([e.details.get('teleport_distance', 0) for e in teleport_events if e.details])
-            avg_distance = round((total_distance / len(teleport_events)) / 1000, 3)  # Convert to kilometers
+            avg_distance = round((total_distance / len(teleport_events)) / DayZADMAnalyzer.METERS_PER_KILOMETER, 3)  # Convert to kilometers
         
         combat_log_events = [e for e in analyzer.events if e.event_type == 'combat_log_unconscious']
         total_combat_logs = sum(stats.get('combat_logs', 0) for stats in player_stats['players'].values())
