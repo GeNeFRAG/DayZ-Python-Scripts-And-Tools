@@ -23,7 +23,7 @@ import re
 import glob
 import os
 from datetime import datetime
-from typing import Dict, List, Tuple, Any, Optional
+from typing import Dict, List, Any, Optional
 
 from ..base import DayZTool, FileBasedTool
 from ..nitrado.api_client import NitradoAPIClient
@@ -60,6 +60,11 @@ class PlayerListManagerTool(FileBasedTool):
         players = manager.get_list('banlist')
     """
     
+    # Console output formatting constants
+    CONSOLE_SEPARATOR_WIDE = 80
+    CONSOLE_SEPARATOR_MEDIUM = 50
+    CONSOLE_SEPARATOR_NARROW = 30
+    
     # Precompiled regex patterns for better performance
     # Pattern to match banned player kick messages
     # Example: "14:09:13.649 Player Bogumilwolf (1596804848) kicked from server: 7 (You were banned.)"
@@ -85,9 +90,68 @@ class PlayerListManagerTool(FileBasedTool):
         self.api_client = NitradoAPIClient(config)
         
         # Supported list types
-        self.supported_lists = ['banlist', 'whitelist', 'priority']  # Using 'priority' instead of 'adminlist' to match Nitrado API
+        # Using 'priority' instead of 'adminlist' to match Nitrado API
+        self.supported_lists = ['banlist', 'whitelist', 'priority']
         
         logger.info("PlayerListManagerTool initialized")
+
+    def _validate_list_type(self, list_type: str) -> None:
+        """
+        Validate that the list type is supported.
+        
+        Args:
+            list_type: The list type to validate
+            
+        Raises:
+            ValueError: If list_type is not supported
+        """
+        if list_type not in self.supported_lists:
+            raise ValueError(
+                f"Unsupported list type: {list_type}. "
+                f"Supported types: {', '.join(self.supported_lists)}"
+            )
+
+    def _validate_identifiers(self, identifiers: List[str]) -> None:
+        """
+        Validate player identifiers format.
+        
+        Args:
+            identifiers: List of player identifiers to validate
+            
+        Raises:
+            ValueError: If any identifier is invalid
+        """
+        if not identifiers:
+            raise ValueError("Identifiers list cannot be empty")
+        
+        for i, identifier in enumerate(identifiers):
+            if not identifier or not identifier.strip():
+                raise ValueError(f"Identifier at position {i} is empty or contains only whitespace")
+            
+            # Basic validation - identifiers should not contain certain characters
+            invalid_chars = ['\n', '\r', '\t', ';', ',']
+            for char in invalid_chars:
+                if char in identifier:
+                    raise ValueError(
+                        f"Identifier '{identifier}' contains invalid character '{char}'"
+                    )
+
+    def _validate_rpt_pattern(self, rpt_file_pattern: str) -> None:
+        """
+        Validate RPT file pattern format.
+        
+        Args:
+            rpt_file_pattern: File pattern to validate
+            
+        Raises:
+            ValueError: If pattern is invalid
+        """
+        if not rpt_file_pattern or not rpt_file_pattern.strip():
+            raise ValueError("RPT file pattern cannot be empty")
+        
+        # Check if pattern looks reasonable (should contain some path elements)
+        if len(rpt_file_pattern.strip()) < 3:
+            raise ValueError("RPT file pattern too short, should be a valid file path pattern")
 
     def get_list(self, list_type: str) -> List[Dict[str, Any]]:
         """
@@ -102,8 +166,7 @@ class PlayerListManagerTool(FileBasedTool):
         Raises:
             ValueError: If list_type is not supported
         """
-        if list_type not in self.supported_lists:
-            raise ValueError(f"Unsupported list type: {list_type}. Supported types: {self.supported_lists}")
+        self._validate_list_type(list_type)
         
         logger.info(f"Retrieving {list_type}")
         
@@ -128,10 +191,10 @@ class PlayerListManagerTool(FileBasedTool):
             API response dictionary
             
         Raises:
-            ValueError: If list_type is not supported
+            ValueError: If list_type is not supported or identifiers are invalid
         """
-        if list_type not in self.supported_lists:
-            raise ValueError(f"Unsupported list type: {list_type}. Supported types: {self.supported_lists}")
+        self._validate_list_type(list_type)
+        self._validate_identifiers(identifiers)
         
         logger.info(f"Adding {len(identifiers)} players to {list_type}: {identifiers}")
         
@@ -156,10 +219,10 @@ class PlayerListManagerTool(FileBasedTool):
             API response dictionary
             
         Raises:
-            ValueError: If list_type is not supported
+            ValueError: If list_type is not supported or identifiers are invalid
         """
-        if list_type not in self.supported_lists:
-            raise ValueError(f"Unsupported list type: {list_type}. Supported types: {self.supported_lists}")
+        self._validate_list_type(list_type)
+        self._validate_identifiers(identifiers)
         
         logger.info(f"Removing {len(identifiers)} players from {list_type}: {identifiers}")
         
@@ -243,11 +306,16 @@ class PlayerListManagerTool(FileBasedTool):
         
         Returns:
             List of dictionaries containing banned connection attempt information
+            
+        Raises:
+            ValueError: If rpt_file_pattern is invalid
         """
         # Set default pattern if not provided
         if not rpt_file_pattern:
             # Use configured log directory from the base class
             rpt_file_pattern = os.path.join(self.log_dir, "*.RPT")
+        else:
+            self._validate_rpt_pattern(rpt_file_pattern)
         
         # Resolve the path to ensure it's absolute
         rpt_pattern_resolved = self.resolve_path(rpt_file_pattern)
@@ -280,7 +348,10 @@ class PlayerListManagerTool(FileBasedTool):
                         if match and current_date:
                             time_part = match.group(1).split('.')[0]  # Strip milliseconds for consistency
                             try:
-                                timestamp = datetime.combine(current_date, datetime.strptime(time_part, '%H:%M:%S').time())
+                                timestamp = datetime.combine(
+                                    current_date, 
+                                    datetime.strptime(time_part, '%H:%M:%S').time()
+                                )
                                 player_name = match.group(2)
                                 player_id = match.group(3)
                                 
@@ -294,7 +365,9 @@ class PlayerListManagerTool(FileBasedTool):
                                 }
                                 
                                 banned_attempts.append(banned_attempt)
-                                logger.debug(f"Found banned connection attempt: {player_name} ({player_id}) at {timestamp}")
+                                logger.debug(
+                                    f"Found banned connection attempt: {player_name} ({player_id}) at {timestamp}"
+                                )
                                 
                             except ValueError as e:
                                 logger.warning(f"Error parsing timestamp in {rpt_file_path}:{line_num}: {e}")
@@ -330,6 +403,183 @@ class PlayerListManagerTool(FileBasedTool):
         # Use the base class write_csv method
         return self.write_csv(banned_attempts, output_file)
 
+    def _handle_banned_attempts_action(self, rpt_file_pattern: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle checking banned connection attempts and displaying results.
+        
+        Args:
+            rpt_file_pattern: File pattern for RPT log files
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        banned_attempts = self.check_banned_connection_attempts(rpt_file_pattern)
+        
+        if banned_attempts:
+            print(f"\nFound {len(banned_attempts)} banned connection attempts:")
+            print("-" * self.CONSOLE_SEPARATOR_WIDE)
+            for attempt in banned_attempts:
+                print(f"Timestamp: {attempt['timestamp']}")
+                print(f"Player: {attempt['player_name']} (ID: {attempt['player_id']})")
+                print(f"Log File: {attempt['log_file']} (Line: {attempt['line_number']})")
+                print(f"Raw Line: {attempt['raw_line']}")
+                print("-" * self.CONSOLE_SEPARATOR_WIDE)
+        else:
+            print("\nNo banned connection attempts found in the analyzed RPT files.")
+        
+        return {'status': 'success', 'banned_attempts': banned_attempts}
+
+    def _handle_export_banned_attempts_action(self, rpt_file_pattern: Optional[str], 
+                                             output_file: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle exporting banned connection attempts to CSV.
+        
+        Args:
+            rpt_file_pattern: File pattern for RPT log files
+            output_file: Optional output file path
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        output_path = self.export_banned_attempts_to_csv(rpt_file_pattern, output_file)
+        banned_count = len(self.check_banned_connection_attempts(rpt_file_pattern))
+        print(f"Exported {banned_count} banned connection attempts to: {output_path}")
+        return {'status': 'success', 'output_file': output_path, 'banned_count': banned_count}
+
+    def _handle_list_action(self, list_type: str) -> Dict[str, Any]:
+        """
+        Handle listing players in a specific list.
+        
+        Args:
+            list_type: Type of list to display
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        players = self.get_list(list_type)
+        logger.info(f"Found {len(players)} players in {list_type}")
+        
+        # Print to console
+        if players:
+            print(f"\n{list_type.upper()} ({len(players)} players):")
+            print("-" * self.CONSOLE_SEPARATOR_MEDIUM)
+            for player in players:
+                print(f"Name: {player.get('name', 'N/A')}")
+                print(f"ID: {player.get('id', 'N/A')}")
+                print(f"ID Type: {player.get('id_type', 'N/A')}")
+                print("-" * self.CONSOLE_SEPARATOR_NARROW)
+        else:
+            print(f"\n{list_type.upper()} is empty.")
+        
+        return {'status': 'success', 'data': players}
+
+    def _handle_add_action(self, list_type: str, identifiers: Optional[List[str]], 
+                          input_file: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle adding players to a list.
+        
+        Args:
+            list_type: Type of list to add to
+            identifiers: List of player identifiers
+            input_file: Optional input file path
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        # Check if user provided input_file instead of identifiers
+        if input_file and not identifiers:
+            logger.info("Input file provided for 'add' action, treating as 'import' operation")
+            if not input_file:
+                raise ValueError("Input file is required when no identifiers provided")
+            result = self.import_list_from_file(list_type, input_file)
+            if "error" in result:
+                logger.error(result["error"])
+                return result
+            print(f"Imported and added players from {input_file} to {list_type}")
+            return result
+        elif not identifiers:
+            raise ValueError(
+                "Identifiers are required for add action "
+                "(use --identifiers player1 player2... or --input-file filename.txt)"
+            )
+        
+        result = self.add_to_list(list_type, identifiers)
+        if "error" in result:
+            logger.error(result["error"])
+            return result
+        print(f"Successfully added {len(identifiers)} players to {list_type}")
+        return result
+
+    def _handle_remove_action(self, list_type: str, identifiers: Optional[List[str]], 
+                             input_file: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle removing players from a list.
+        
+        Args:
+            list_type: Type of list to remove from
+            identifiers: List of player identifiers
+            input_file: Optional input file path
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        # Check if user provided input_file instead of identifiers
+        if input_file and not identifiers:
+            logger.info("Input file provided for 'remove' action, treating as file-based removal")
+            result = self.import_list_from_file(list_type, input_file, add_mode=False)
+            if "error" in result:
+                logger.error(result["error"])
+                return result
+            print(f"Imported and removed players from {input_file} from {list_type}")
+            return result
+        elif not identifiers:
+            raise ValueError(
+                "Identifiers are required for remove action "
+                "(use --identifiers player1 player2... or --input-file filename.txt)"
+            )
+        
+        result = self.remove_from_list(list_type, identifiers)
+        if "error" in result:
+            logger.error(result["error"])
+            return result
+        print(f"Successfully removed {len(identifiers)} players from {list_type}")
+        return result
+
+    def _handle_export_action(self, list_type: str, output_file: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle exporting a player list to CSV.
+        
+        Args:
+            list_type: Type of list to export
+            output_file: Optional output file path
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        output_path = self.export_list_to_csv(list_type, output_file)
+        print(f"Exported {list_type} to: {output_path}")
+        return {'status': 'success', 'output_file': output_path}
+
+    def _handle_import_action(self, list_type: str, input_file: Optional[str]) -> Dict[str, Any]:
+        """
+        Handle importing players from a file to a list.
+        
+        Args:
+            list_type: Type of list to import to
+            input_file: Input file path
+            
+        Returns:
+            Dictionary containing execution results
+        """
+        if not input_file:
+            raise ValueError("Input file is required for import action")
+        result = self.import_list_from_file(list_type, input_file)
+        if "error" in result:
+            logger.error(result["error"])
+            return result
+        print(f"Imported players from {input_file} to {list_type}")
+        return result
+
     def run(self, list_type: str = None, action: str = None, identifiers: Optional[List[str]] = None, 
             input_file: Optional[str] = None, output_file: Optional[str] = None,
             rpt_file_pattern: Optional[str] = None) -> Dict[str, Any]:
@@ -348,109 +598,27 @@ class PlayerListManagerTool(FileBasedTool):
             Dictionary containing execution results
         """
         try:
-            # Handle banned connection attempts check action (doesn't require list_type)
+            # Handle banned connection attempts actions (don't require list_type)
             if action == 'check-banned-attempts':
-                banned_attempts = self.check_banned_connection_attempts(rpt_file_pattern)
-                
-                if banned_attempts:
-                    print(f"\nFound {len(banned_attempts)} banned connection attempts:")
-                    print("-" * 80)
-                    for attempt in banned_attempts:
-                        print(f"Timestamp: {attempt['timestamp']}")
-                        print(f"Player: {attempt['player_name']} (ID: {attempt['player_id']})")
-                        print(f"Log File: {attempt['log_file']} (Line: {attempt['line_number']})")
-                        print(f"Raw Line: {attempt['raw_line']}")
-                        print("-" * 80)
-                else:
-                    print("\nNo banned connection attempts found in the analyzed RPT files.")
-                
-                return {'status': 'success', 'banned_attempts': banned_attempts}
-            
+                return self._handle_banned_attempts_action(rpt_file_pattern)
             elif action == 'export-banned-attempts':
-                output_path = self.export_banned_attempts_to_csv(rpt_file_pattern, output_file)
-                banned_count = len(self.check_banned_connection_attempts(rpt_file_pattern))
-                print(f"Exported {banned_count} banned connection attempts to: {output_path}")
-                return {'status': 'success', 'output_file': output_path, 'banned_count': banned_count}
+                return self._handle_export_banned_attempts_action(rpt_file_pattern, output_file)
             
             # All other actions require list_type
             if not list_type:
                 raise ValueError("list_type is required for this action")
             
+            # Dispatch to appropriate handler method
             if action == 'list':
-                players = self.get_list(list_type)
-                logger.info(f"Found {len(players)} players in {list_type}")
-                
-                # Print to console
-                if players:
-                    print(f"\n{list_type.upper()} ({len(players)} players):")
-                    print("-" * 50)
-                    for player in players:
-                        print(f"Name: {player.get('name', 'N/A')}")
-                        print(f"ID: {player.get('id', 'N/A')}")
-                        print(f"ID Type: {player.get('id_type', 'N/A')}")
-                        print("-" * 30)
-                else:
-                    print(f"\n{list_type.upper()} is empty.")
-                
-                return {'status': 'success', 'data': players}
-            
+                return self._handle_list_action(list_type)
             elif action == 'add':
-                # Check if user provided input_file instead of identifiers
-                if input_file and not identifiers:
-                    logger.info("Input file provided for 'add' action, treating as 'import' operation")
-                    if not input_file:
-                        raise ValueError("Input file is required when no identifiers provided")
-                    result = self.import_list_from_file(list_type, input_file)
-                    if "error" in result:
-                        logger.error(result["error"])
-                        return result
-                    print(f"Imported and added players from {input_file} to {list_type}")
-                    return result
-                elif not identifiers:
-                    raise ValueError("Identifiers are required for add action (use --identifiers player1 player2... or --input-file filename.txt)")
-                
-                result = self.add_to_list(list_type, identifiers)
-                if "error" in result:
-                    logger.error(result["error"])
-                    return result
-                print(f"Successfully added {len(identifiers)} players to {list_type}")
-                return result
-            
+                return self._handle_add_action(list_type, identifiers, input_file)
             elif action == 'remove':
-                # Check if user provided input_file instead of identifiers
-                if input_file and not identifiers:
-                    logger.info("Input file provided for 'remove' action, treating as file-based removal")
-                    result = self.import_list_from_file(list_type, input_file, add_mode=False)
-                    if "error" in result:
-                        logger.error(result["error"])
-                        return result
-                    print(f"Imported and removed players from {input_file} from {list_type}")
-                    return result
-                elif not identifiers:
-                    raise ValueError("Identifiers are required for remove action (use --identifiers player1 player2... or --input-file filename.txt)")
-                
-                result = self.remove_from_list(list_type, identifiers)
-                if "error" in result:
-                    logger.error(result["error"])
-                    return result
-                print(f"Successfully removed {len(identifiers)} players from {list_type}")
-                return result
-            
+                return self._handle_remove_action(list_type, identifiers, input_file)
             elif action == 'export':
-                output_path = self.export_list_to_csv(list_type, output_file)
-                print(f"Exported {list_type} to: {output_path}")
-                return {'status': 'success', 'output_file': output_path}
-            
+                return self._handle_export_action(list_type, output_file)
             elif action == 'import':
-                if not input_file:
-                    raise ValueError("Input file is required for import action")
-                result = self.import_list_from_file(list_type, input_file)
-                if "error" in result:
-                    logger.error(result["error"])
-                    return result
-                print(f"Imported players from {input_file} to {list_type}")
-                return result
-            
+                return self._handle_import_action(list_type, input_file)
             else:
                 raise ValueError(f"Unknown action: {action}")
         
@@ -464,7 +632,10 @@ def main():
     Main entry point for the player list manager CLI.
     """
     parser = argparse.ArgumentParser(
-        description="Manage DayZ server player lists (banlist, whitelist, priority) via Nitrado API and analyze banned connection attempts"
+        description=(
+            "Manage DayZ server player lists (banlist, whitelist, priority) "
+            "via Nitrado API and analyze banned connection attempts"
+        )
     )
     
     # Add standard arguments
@@ -474,7 +645,10 @@ def main():
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
     
     # Player list management subparser
-    list_parser = subparsers.add_parser('manage', help='Manage player lists (banlist, whitelist, priority)')
+    list_parser = subparsers.add_parser(
+        'manage', 
+        help='Manage player lists (banlist, whitelist, priority)'
+    )
     list_parser.add_argument(
         'list_type',
         choices=['banlist', 'whitelist', 'priority'],
@@ -492,7 +666,10 @@ def main():
     )
     list_parser.add_argument(
         '--input-file',
-        help='Text file path for import actions OR for add/remove actions (one player ID per line, lines starting with # are ignored as comments)'
+        help=(
+            'Text file path for import actions OR for add/remove actions '
+            '(one player ID per line, lines starting with # are ignored as comments)'
+        )
     )
     list_parser.add_argument(
         '--output-file',
@@ -500,7 +677,10 @@ def main():
     )
     
     # Banned connection attempts subparser
-    banned_parser = subparsers.add_parser('banned-attempts', help='Check for banned player connection attempts in RPT logs')
+    banned_parser = subparsers.add_parser(
+        'banned-attempts', 
+        help='Check for banned player connection attempts in RPT logs'
+    )
     banned_parser.add_argument(
         'action',
         choices=['check', 'export'],
@@ -508,7 +688,10 @@ def main():
     )
     banned_parser.add_argument(
         '--rpt-pattern',
-        help='File pattern for RPT log files (e.g., "/path/to/*.RPT"). If not provided, uses *.RPT in the configured log directory'
+        help=(
+            'File pattern for RPT log files (e.g., "/path/to/*.RPT"). '
+            'If not provided, uses *.RPT in the configured log directory'
+        )
     )
     banned_parser.add_argument(
         '--output-file',
