@@ -27,6 +27,16 @@ class DupingDetector(FileBasedTool):
     This class parses ADM and RPT log files to identify suspicious 
     item spawn patterns that might indicate duplication exploits.
     """
+    
+    # Class constants
+    TIME_FORMAT = '%H:%M:%S'
+    DATE_FORMAT_ADM = '%Y-%m-%d'
+    DATE_FORMAT_RPT = '%Y/%m/%d'
+    MILLISECOND_STRIP_INDEX = 0
+    DEFAULT_PROXIMITY_THRESHOLD = 10.0
+    DEFAULT_TIME_THRESHOLD = 60
+    DEFAULT_LOGIN_THRESHOLD = 300
+    DEFAULT_LOGIN_COUNT_THRESHOLD = 3
 
     def __init__(self, config: Dict[str, Any] = None):
         """
@@ -42,14 +52,15 @@ class DupingDetector(FileBasedTool):
         self.ensure_dir(self.log_dir)
         self.ensure_dir(self.output_dir)
         
-        # Map log_dir to log_download_path for compatibility with existing methods
-        self.log_download_path = self.log_dir
-        
-        # Get default thresholds from config or use hardcoded defaults
-        self.proximity_threshold = float(self.get_config('duping_detector.proximity_threshold', 10))
-        self.time_threshold = timedelta(seconds=int(self.get_config('duping_detector.time_threshold', 60)))
-        self.login_threshold = timedelta(seconds=int(self.get_config('duping_detector.login_threshold', 300)))
-        self.login_count_threshold = int(self.get_config('duping_detector.login_count_threshold', 3))
+        # Get default thresholds from config or use class constants
+        self.proximity_threshold = float(self.get_config('duping_detector.proximity_threshold', 
+                                                        self.DEFAULT_PROXIMITY_THRESHOLD))
+        self.time_threshold = timedelta(seconds=int(self.get_config('duping_detector.time_threshold', 
+                                                                   self.DEFAULT_TIME_THRESHOLD)))
+        self.login_threshold = timedelta(seconds=int(self.get_config('duping_detector.login_threshold', 
+                                                                    self.DEFAULT_LOGIN_THRESHOLD)))
+        self.login_count_threshold = int(self.get_config('duping_detector.login_count_threshold', 
+                                                        self.DEFAULT_LOGIN_COUNT_THRESHOLD))
         
     def parse_adm_file(self, file_path: str) -> Tuple[List[Tuple[datetime, Tuple[float, float], str]], List[Tuple[datetime, str]]]:
         """
@@ -78,24 +89,29 @@ class DupingDetector(FileBasedTool):
                     if "AdminLog started on" in line:
                         match_date = re.search(r'AdminLog started on (\d{4}-\d{2}-\d{2})', line)
                         if match_date:
-                            current_date = datetime.strptime(match_date.group(1), '%Y-%m-%d').date()
+                            current_date = datetime.strptime(match_date.group(1), self.DATE_FORMAT_ADM).date()
                             logger.debug(f"ADM log date: {current_date}")
                     # Extract player positions
                     match = re.search(r'Player "(.*?)" \(id=.*? pos=<(\d+\.\d+), (\d+\.\d+), \d+\.\d+>', line)
                     if match and current_date:
                         time_part = line.split('|')[0].strip()
-                        timestamp = datetime.combine(current_date, datetime.strptime(time_part, '%H:%M:%S').time())
+                        timestamp = datetime.combine(current_date, 
+                                                   datetime.strptime(time_part, self.TIME_FORMAT).time())
                         player_name = match.group(1)  # Extract player name
                         pos = (float(match.group(2)), float(match.group(3)))  # Ignore z-coordinate
                         player_positions.append((timestamp, pos, player_name))
                     # Extract login events
                     login_match = re.search(r'(\d{2}:\d{2}:\d{2}) \| Player "(.*?)"\(id=.*?\) is connected', line)
                     if login_match and current_date:
-                        login_time = datetime.combine(current_date, datetime.strptime(login_match.group(1), '%H:%M:%S').time())
+                        login_time = datetime.combine(current_date, 
+                                                    datetime.strptime(login_match.group(1), self.TIME_FORMAT).time())
                         player_name = login_match.group(2)
                         login_events.append((login_time, player_name))
                         
-            logger.info(f"Parsed {len(player_positions)} player positions and {len(login_events)} login events from {os.path.basename(file_path)}")
+            parsed_positions = len(player_positions)
+            parsed_logins = len(login_events)
+            filename = os.path.basename(file_path)
+            logger.info(f"Parsed {parsed_positions} player positions and {parsed_logins} login events from {filename}")
         except Exception as e:
             logger.error(f"Error parsing ADM file {resolved_path}: {str(e)}")
             
@@ -125,18 +141,22 @@ class DupingDetector(FileBasedTool):
                     if "Current time:" in line:
                         match_date = re.search(r'Current time:\s+(\d{4}/\d{2}/\d{2})', line)
                         if match_date:
-                            current_date = datetime.strptime(match_date.group(1), '%Y/%m/%d').date()
+                            current_date = datetime.strptime(match_date.group(1), self.DATE_FORMAT_RPT).date()
                             logger.debug(f"RPT log date: {current_date}")
                     # Extract loot spawns
-                    match = re.search(r'(\d{1,2}:\d{2}:\d{2}\.\d{3})\s+Adding (.*?) at \[(\d+),(\d+)\]', line)
+                    loot_pattern = r'(\d{1,2}:\d{2}:\d{2}\.\d{3})\s+Adding (.*?) at \[(\d+),(\d+)\]'
+                    match = re.search(loot_pattern, line)
                     if match and current_date:
-                        time_part = match.group(1).split('.')[0]  # Strip milliseconds for consistency
-                        timestamp = datetime.combine(current_date, datetime.strptime(time_part, '%H:%M:%S').time())
+                        time_part = match.group(1).split('.')[self.MILLISECOND_STRIP_INDEX]  # Strip milliseconds
+                        timestamp = datetime.combine(current_date, 
+                                                   datetime.strptime(time_part, self.TIME_FORMAT).time())
                         loot_item = match.group(2)  # Extract loot item
                         pos = (float(match.group(3)), float(match.group(4)))
                         loot_spawns.append((timestamp, pos, loot_item))
                         
-            logger.info(f"Parsed {len(loot_spawns)} loot spawn events from {os.path.basename(file_path)}")
+            loot_count = len(loot_spawns)
+            filename = os.path.basename(file_path)
+            logger.info(f"Parsed {loot_count} loot spawn events from {filename}")
         except Exception as e:
             logger.error(f"Error parsing RPT file {resolved_path}: {str(e)}")
             
@@ -152,9 +172,127 @@ class DupingDetector(FileBasedTool):
 
         Returns:
             The Euclidean distance between the two positions.
+            
+        Raises:
+            ValueError: If positions are not 2-tuples of numbers.
         """
-        # Simplify to 2D distance calculation
-        return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+        # Validate input positions
+        if len(pos1) != 2 or len(pos2) != 2:
+            raise ValueError("Positions must be 2-tuples of (x, y)")
+        
+        try:
+            # Simplify to 2D distance calculation
+            return sqrt((pos1[0] - pos2[0]) ** 2 + (pos1[1] - pos2[1]) ** 2)
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Invalid position values: {e}") from e
+
+    def _analyze_suspicious_logins(self, login_events: List[Tuple[datetime, str]], 
+                                 login_threshold_seconds: float, 
+                                 login_count_threshold: int) -> Tuple[Dict[str, List], List[Dict]]:
+        """
+        Analyze login events to identify suspicious login patterns.
+        
+        Args:
+            login_events: List of (timestamp, player_name) tuples
+            login_threshold_seconds: Time window for clustering logins
+            login_count_threshold: Minimum logins to consider suspicious
+            
+        Returns:
+            Tuple of (suspicious_logins_dict, suspicious_logins_list)
+        """
+        suspicious_logins = {}
+        suspicious_logins_list = []
+        
+        for player_name in set(name for _, name in login_events):  # Process each player once
+            player_logins = [time for time, name in login_events if name == player_name]
+            player_logins.sort()  # Ensure logins are sorted by time
+            
+            if len(player_logins) < login_count_threshold:
+                continue
+
+            clusters = []  # To store clusters of suspicious logins
+            current_cluster = [player_logins[0]]  # Start with the first login
+
+            for i in range(1, len(player_logins)):
+                time_diff = (player_logins[i] - player_logins[i - 1]).total_seconds()
+                if time_diff <= login_threshold_seconds:
+                    current_cluster.append(player_logins[i])
+                else:
+                    if len(current_cluster) >= login_count_threshold:
+                        clusters.append(current_cluster)
+                    current_cluster = [player_logins[i]]
+
+            # Check the last cluster
+            if len(current_cluster) >= login_count_threshold:
+                clusters.append(current_cluster)
+
+            # Add clusters to suspicious logins
+            if clusters:
+                suspicious_logins[player_name] = clusters
+                for cluster in clusters:
+                    suspicious_logins_list.append({
+                        "player_name": player_name,
+                        "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in cluster]
+                    })
+        
+        return suspicious_logins, suspicious_logins_list
+
+    def _correlate_loot_with_players(self, all_loot_spawns: List[Tuple[datetime, Tuple[float, float], str]], 
+                                   player_positions: List[Tuple[datetime, Tuple[float, float], str]], 
+                                   suspicious_logins: Dict[str, List], 
+                                   adm_file_path: str, 
+                                   time_threshold_seconds: float, 
+                                   proximity_threshold: float) -> List[Dict]:
+        """
+        Correlate loot spawns with player positions for suspicious players.
+        
+        Args:
+            all_loot_spawns: List of (timestamp, position, item) tuples
+            player_positions: List of (timestamp, position, player_name) tuples
+            suspicious_logins: Dictionary of player names to login clusters
+            adm_file_path: Path to the ADM file being processed
+            time_threshold_seconds: Time window for correlation
+            proximity_threshold: Distance threshold for correlation
+            
+        Returns:
+            List of suspicious activity dictionaries
+        """
+        suspicious_activities = []
+        
+        # Check loot spawns for players with suspicious logins
+        for player_name, login_clusters in suspicious_logins.items():
+            for loot_time, loot_pos, loot_item in all_loot_spawns:
+                # Check if loot spawn occurs during or shortly after any suspicious login
+                loot_during_login = any(
+                    abs((loot_time - login_time).total_seconds()) <= time_threshold_seconds 
+                    for cluster in login_clusters for login_time in cluster
+                )
+                
+                if loot_during_login:
+                    # Find relevant player positions within time threshold
+                    relevant_positions = [
+                        (player_time, player_pos) for player_time, player_pos, name in player_positions
+                        if (name == player_name and 
+                            abs((loot_time - player_time).total_seconds()) <= time_threshold_seconds)
+                    ]
+                    
+                    for player_time, player_pos in relevant_positions:
+                        distance = self.calculate_distance(loot_pos, player_pos)
+                        if distance <= proximity_threshold:
+                            login_count = len([login for cluster in login_clusters for login in cluster])
+                            suspicious_activities.append({
+                                "adm_file": os.path.basename(adm_file_path),
+                                "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                "loot_pos": loot_pos,
+                                "loot_item": loot_item,
+                                "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
+                                "player_pos": player_pos,
+                                "player_name": player_name,
+                                "recent_logins": login_count,
+                                "distance": round(distance, 2)
+                            })
+        
+        return suspicious_activities
 
     def detect_duplication(self, adm_pattern: str, rpt_pattern: str, 
                           proximity_threshold: float = None,
@@ -182,7 +320,6 @@ class DupingDetector(FileBasedTool):
         login_count_threshold = login_count_threshold or self.login_count_threshold
         
         suspicious_activities = []
-        suspicious_logins_list = []
         time_threshold_seconds = time_threshold.total_seconds()
         login_threshold_seconds = login_threshold.total_seconds()
 
@@ -208,68 +345,27 @@ class DupingDetector(FileBasedTool):
         for rpt_file_path in rpt_files:
             all_loot_spawns.extend(self.parse_rpt_file(rpt_file_path))
 
+        all_suspicious_logins = []
+        
         for adm_file_path in adm_files:
             player_positions, login_events = self.parse_adm_file(adm_file_path)
 
             # Identify players with suspicious logins
-            suspicious_logins = {}
-            for player_name in set(name for _, name in login_events):  # Process each player once
-                player_logins = [time for time, name in login_events if name == player_name]
-                player_logins.sort()  # Ensure logins are sorted by time
-                
-                if len(player_logins) < login_count_threshold:
-                    continue
+            suspicious_logins, suspicious_logins_list = self._analyze_suspicious_logins(
+                login_events, login_threshold_seconds, login_count_threshold
+            )
+            
+            all_suspicious_logins.extend(suspicious_logins_list)
 
-                clusters = []  # To store clusters of suspicious logins
-                current_cluster = [player_logins[0]]  # Start with the first login
+            # Correlate loot spawns with player positions for suspicious players
+            file_suspicious_activities = self._correlate_loot_with_players(
+                all_loot_spawns, player_positions, suspicious_logins,
+                adm_file_path, time_threshold_seconds, proximity_threshold
+            )
+            
+            suspicious_activities.extend(file_suspicious_activities)
 
-                for i in range(1, len(player_logins)):
-                    if (player_logins[i] - player_logins[i - 1]).total_seconds() <= login_threshold_seconds:
-                        current_cluster.append(player_logins[i])
-                    else:
-                        if len(current_cluster) >= login_count_threshold:
-                            clusters.append(current_cluster)
-                        current_cluster = [player_logins[i]]
-
-                # Check the last cluster
-                if len(current_cluster) >= login_count_threshold:
-                    clusters.append(current_cluster)
-
-                # Add clusters to suspicious logins
-                if clusters:
-                    suspicious_logins[player_name] = clusters
-                    for cluster in clusters:
-                        suspicious_logins_list.append({
-                            "player_name": player_name,
-                            "recent_logins": [time.strftime('%Y-%m-%d %H:%M:%S') for time in cluster]
-                        })
-
-            # Check loot spawns for players with suspicious logins
-            for player_name, login_clusters in suspicious_logins.items():
-                for loot_time, loot_pos, loot_item in all_loot_spawns:
-                    # Ensure loot spawn occurs during or shortly after any suspicious login in any cluster
-                    if any(abs((loot_time - login_time).total_seconds()) <= time_threshold_seconds 
-                           for cluster in login_clusters for login_time in cluster):
-                        relevant_positions = [
-                            (player_time, player_pos) for player_time, player_pos, name in player_positions
-                            if name == player_name and abs((loot_time - player_time).total_seconds()) <= time_threshold_seconds
-                        ]
-                        for player_time, player_pos in relevant_positions:
-                            distance = self.calculate_distance(loot_pos, player_pos)
-                            if distance <= proximity_threshold:
-                                suspicious_activities.append({
-                                    "adm_file": os.path.basename(adm_file_path),
-                                    "loot_time": loot_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                    "loot_pos": loot_pos,
-                                    "loot_item": loot_item,
-                                    "player_time": player_time.strftime('%Y-%m-%d %H:%M:%S'),
-                                    "player_pos": player_pos,
-                                    "player_name": player_name,
-                                    "recent_logins": len([login for cluster in login_clusters for login in cluster]),
-                                    "distance": round(distance, 2)
-                                })
-
-        return suspicious_activities, suspicious_logins_list
+        return suspicious_activities, all_suspicious_logins
         
     def run(self, adm_pattern: str = None, rpt_pattern: str = None,
            proximity_threshold: float = None, time_threshold: int = None,
@@ -318,47 +414,44 @@ class DupingDetector(FileBasedTool):
         activities_file = self.generate_timestamped_filename("suspicious_activities", "csv")
         logins_file = self.generate_timestamped_filename("suspicious_logins", "csv")
         
-        # Use self.write_csv which handles output directory and headers
+        # Write suspicious activities
         if suspicious_activities:
-            # Add timestamp information to the CSV data
-            timestamp_header = {"Report Generated": current_timestamp}
+            # Add timestamp to each activity record
+            for activity in suspicious_activities:
+                activity["Report Generated"] = current_timestamp
             
-            self.write_csv(
-                [timestamp_header] + suspicious_activities,
-                activities_file,
-                ["Report Generated", "adm_file", "loot_time", "loot_pos", "loot_item", "player_time", "player_pos", 
-                 "player_name", "recent_logins", "distance"]
-            )
-            logger.info(f"Suspicious duplication activities detected. Results saved to '{activities_file}' (timestamp: {current_timestamp})")
+            self.write_csv(suspicious_activities, activities_file)
+            logger.info(f"Suspicious activities detected. Results saved to '{activities_file}' "
+                       f"(timestamp: {current_timestamp})")
         else:
             logger.info("No suspicious activities detected.")
-            # Create empty file anyway with timestamp
-            timestamp_header = [{"Report Generated": current_timestamp}]
-            self.write_csv(timestamp_header, activities_file, 
-                          ["Report Generated", "adm_file", "loot_time", "loot_pos", "loot_item", "player_time", 
-                           "player_pos", "player_name", "recent_logins", "distance"])
-            logger.info(f"Empty activities file created at '{activities_file}' (timestamp: {current_timestamp})")
+            # Create empty file with just timestamp
+            empty_data = [{"Report Generated": current_timestamp}]
+            self.write_csv(empty_data, activities_file)
+            logger.info(f"Empty activities file created at '{activities_file}' "
+                       f"(timestamp: {current_timestamp})")
 
+        # Write suspicious logins
         if suspicious_logins_list:
+            # Format logins and add timestamp
             formatted_logins = []
             for login in suspicious_logins_list:
                 formatted_logins.append({
+                    "Report Generated": current_timestamp,
                     "player_name": login["player_name"],
                     "recent_logins": ", ".join(login["recent_logins"])
                 })
             
-            # Add timestamp information to the CSV data
-            timestamp_header = {"Report Generated": current_timestamp}
-            
-            self.write_csv([timestamp_header] + formatted_logins, logins_file, 
-                          ["Report Generated", "player_name", "recent_logins"])
-            logger.info(f"Suspicious logins detected. Results saved to '{logins_file}' (timestamp: {current_timestamp})")
+            self.write_csv(formatted_logins, logins_file)
+            logger.info(f"Suspicious logins detected. Results saved to '{logins_file}' "
+                       f"(timestamp: {current_timestamp})")
         else:
             logger.info("No suspicious logins detected.")
-            # Create empty file anyway with timestamp
-            timestamp_header = [{"Report Generated": current_timestamp}]
-            self.write_csv(timestamp_header, logins_file, ["Report Generated", "player_name", "recent_logins"])
-            logger.info(f"Empty logins file created at '{logins_file}' (timestamp: {current_timestamp})")
+            # Create empty file with just timestamp
+            empty_data = [{"Report Generated": current_timestamp}]
+            self.write_csv(empty_data, logins_file)
+            logger.info(f"Empty logins file created at '{logins_file}' "
+                       f"(timestamp: {current_timestamp})")
             
         return 0
 
