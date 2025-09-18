@@ -38,6 +38,9 @@ class SearchOvertimeFinder(FileBasedTool):
     These items often indicate configuration issues with loot spawning.
     """
     
+    # Class constants
+    TOP_ITEMS_DISPLAY_LIMIT = 5  # Number of top items to display in console output
+    
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialize the search overtime finder tool.
@@ -57,7 +60,10 @@ class SearchOvertimeFinder(FileBasedTool):
         
         # Load patterns - using exactly the same regex patterns as in the original script
         overtime_pattern = patterns.get('overtime', 'Item \\[\\d+\\] causing search overtime: \"(.*?)\"')
-        hard_to_place_pattern = patterns.get('hard_to_place', 'LootRespawner\\] \\(PRIDummy\\) :: Item \\[\\d+\\] is hard to place, performance drops: \"(.*?)\"')
+        hard_to_place_pattern = patterns.get(
+            'hard_to_place', 
+            'LootRespawner\\] \\(PRIDummy\\) :: Item \\[\\d+\\] is hard to place, performance drops: \"(.*?)\"'
+        )
         
         # Compile patterns
         self.patterns = {
@@ -67,6 +73,30 @@ class SearchOvertimeFinder(FileBasedTool):
         
         logger.debug(f"Loaded regex patterns: overtime: '{overtime_pattern}'")
         logger.debug(f"Loaded regex patterns: hard_to_place: '{hard_to_place_pattern}'")
+        
+    def validate_log_file(self, file_path: str) -> bool:
+        """
+        Validate that a log file exists and is readable.
+        
+        Args:
+            file_path: Path to the log file to validate.
+            
+        Returns:
+            True if file is valid, False otherwise.
+        """
+        if not os.path.exists(file_path):
+            logger.error(f"Log file does not exist: {file_path}")
+            return False
+            
+        if not os.path.isfile(file_path):
+            logger.error(f"Path is not a file: {file_path}")
+            return False
+            
+        if not os.access(file_path, os.R_OK):
+            logger.error(f"Log file is not readable: {file_path}")
+            return False
+            
+        return True
         
     def process_log_file(self, file_path: str) -> Dict[str, Dict[str, int]]:
         """
@@ -80,6 +110,14 @@ class SearchOvertimeFinder(FileBasedTool):
             Each contains a dictionary of item names to occurrence counts.
         """
         logger.info(f"Processing log file: {file_path}")
+        
+        # Validate log file first
+        if not self.validate_log_file(file_path):
+            logger.warning(f"Skipping invalid log file: {file_path}")
+            return {
+                'overtime': Counter(),
+                'hard_to_place': Counter()
+            }
         
         # Initialize results structure with Counter objects to track occurrences
         results = {
@@ -104,8 +142,14 @@ class SearchOvertimeFinder(FileBasedTool):
             
             # Update processed files counter
             self.files_processed += 1
-            logger.info(f"Found {sum(results['overtime'].values())} search overtime occurrences for {len(results['overtime'])} unique items")
-            logger.info(f"Found {sum(results['hard_to_place'].values())} hard to place occurrences for {len(results['hard_to_place'])} unique items")
+            logger.info(
+                f"Found {sum(results['overtime'].values())} search overtime occurrences "
+                f"for {len(results['overtime'])} unique items"
+            )
+            logger.info(
+                f"Found {sum(results['hard_to_place'].values())} hard to place occurrences "
+                f"for {len(results['hard_to_place'])} unique items"
+            )
             
             return results
             
@@ -177,7 +221,10 @@ class SearchOvertimeFinder(FileBasedTool):
         
         return outputs
         
-    def run(self, log_file_patterns: List[str], output_dir: Optional[str] = None, prefix: str = "problematic_items") -> Dict[str, Any]:
+    def run(self, 
+            log_file_patterns: List[str], 
+            output_dir: Optional[str] = None, 
+            prefix: str = "problematic_items") -> Dict[str, Any]:
         """
         Run the search overtime finder tool.
         
@@ -226,11 +273,78 @@ class SearchOvertimeFinder(FileBasedTool):
         return {
             'files_processed': self.files_processed,
             'problematic_items': {
-                'overtime': [f"{item} (count: {count})" for item, count in combined_results['overtime'].most_common()],
-                'hard_to_place': [f"{item} (count: {count})" for item, count in combined_results['hard_to_place'].most_common()]
+                'overtime': [
+                    f"{item} (count: {count})" 
+                    for item, count in combined_results['overtime'].most_common()
+                ],
+                'hard_to_place': [
+                    f"{item} (count: {count})" 
+                    for item, count in combined_results['hard_to_place'].most_common()
+                ]
             },
             'reports': report_paths
         }
+
+
+def _expand_log_file_patterns(patterns: List[str], default_log_dir: str) -> List[str]:
+    """
+    Expand wildcard patterns in log file paths and handle default directory.
+    
+    Args:
+        patterns: List of file patterns to expand.
+        default_log_dir: Default log directory for when no files are specified.
+        
+    Returns:
+        List of expanded file paths.
+    """
+    if not patterns:
+        default_pattern = os.path.join(default_log_dir, "*.RPT")
+        patterns = [default_pattern]
+        logging.info(f"No log files specified, using default pattern: {default_pattern}")
+    
+    log_files = []
+    for pattern in patterns:
+        if '*' in pattern or '?' in pattern:
+            expanded = glob.glob(pattern)
+            if not expanded:
+                logging.warning(f"No files found matching pattern: {pattern}")
+            log_files.extend(expanded)
+        else:
+            log_files.append(pattern)
+    
+    return log_files
+
+
+def _display_results(result: Dict[str, Any]) -> None:
+    """
+    Display the analysis results to the console.
+    
+    Args:
+        result: Dictionary containing the analysis results.
+    """
+    logging.info(f"Processed {result.get('files_processed', 0)} log files")
+    
+    if 'problematic_items' in result:
+        logging.info("\nProblematic Items Found:")
+        items = result['problematic_items']
+        logging.info(f"Search Overtime: {len(items['overtime'])} unique items")
+        logging.info(f"Hard to Place: {len(items['hard_to_place'])} unique items")
+        
+        # Display top items of each category
+        for category, items_list in items.items():
+            if items_list:
+                top_limit = SearchOvertimeFinder.TOP_ITEMS_DISPLAY_LIMIT
+                top_items = items_list[:top_limit] if len(items_list) > top_limit else items_list
+                category_title = category.replace('_', ' ').title()
+                logging.info(f"\nTop {min(top_limit, len(items_list))} {category_title} Items:")
+                for item in top_items:
+                    logging.info(f"  {item}")
+    
+    # Display report paths
+    if 'reports' in result:
+        logging.info("\nReports Generated:")
+        for report_type, file_path in result['reports'].items():
+            logging.info(f"{report_type.replace('_', ' ').title()}: {file_path}")
 
 
 def main() -> int:
@@ -241,7 +355,9 @@ def main() -> int:
         Exit code (0 for success, non-zero for failure)
     """
     parser = argparse.ArgumentParser(description='Find unique items causing search overtime and performance drops.')
-    parser.add_argument('log_files', type=str, nargs='*', help='Path to log file(s). Supports wildcards like *.RPT. If not specified, uses RPT files from log_download_path.')
+    parser.add_argument('log_files', type=str, nargs='*', 
+                       help='Path to log file(s). Supports wildcards like *.RPT. '
+                            'If not specified, uses RPT files from log_download_path.')
     parser.add_argument('--output', '-o', type=str, help='Directory to export results to')
     parser.add_argument('--prefix', type=str, default="problematic_items", help='Prefix for exported files')
     parser.add_argument('--verbose', '-v', action='store_true', help='Enable verbose logging')
@@ -266,22 +382,8 @@ def main() -> int:
     tool = SearchOvertimeFinder(config)
     
     try:
-        # If no log files are specified, use the default log directory from config
-        if not args.log_files:
-            default_log_pattern = os.path.join(tool.log_dir, "*.RPT")
-            args.log_files = [default_log_pattern]
-            logging.info(f"No log files specified, using default pattern: {default_log_pattern}")
-            
-        # Expand any wildcards in log file paths
-        log_files = []
-        for pattern in args.log_files:
-            if '*' in pattern or '?' in pattern:
-                expanded = glob.glob(pattern)
-                if not expanded:
-                    logging.warning(f"No files found matching pattern: {pattern}")
-                log_files.extend(expanded)
-            else:
-                log_files.append(pattern)
+        # Expand file patterns using helper function
+        log_files = _expand_log_file_patterns(args.log_files, tool.log_dir)
                 
         if not log_files:
             logging.error("No log files found matching the specified patterns.")
@@ -290,27 +392,8 @@ def main() -> int:
         # Run the tool
         result = tool.run(log_files, args.output, args.prefix)
         
-        # Display results
-        logging.info(f"Processed {result.get('files_processed', 0)} log files")
-        
-        if 'problematic_items' in result:
-            logging.info("\nProblematic Items Found:")
-            logging.info(f"Search Overtime: {len(result['problematic_items']['overtime'])} unique items")
-            logging.info(f"Hard to Place: {len(result['problematic_items']['hard_to_place'])} unique items")
-            
-            # Display top items of each category
-            for category, items in result['problematic_items'].items():
-                if items:
-                    top_items = items[:5] if len(items) > 5 else items
-                    logging.info(f"\nTop {min(5, len(items))} {category.replace('_', ' ').title()} Items:")
-                    for item in top_items:
-                        logging.info(f"  {item}")
-        
-        # Display report paths
-        if 'reports' in result:
-            logging.info("\nReports Generated:")
-            for report_type, file_path in result['reports'].items():
-                logging.info(f"{report_type.replace('_', ' ').title()}: {file_path}")
+        # Display results using helper function
+        _display_results(result)
         
         return 0
         
