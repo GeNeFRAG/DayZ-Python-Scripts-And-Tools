@@ -6,7 +6,7 @@ A collection of Python tools for DayZ server administration that help analyze se
 
 The `dayz_admin_tools.tools` package contains specialized tools developed to assist DayZ server administrators with common administrative tasks. These tools are designed to be used both as standalone command-line applications and as Python modules that can be integrated into other projects.
 
-All tools in this package inherit from the `DayZTool` base class and follow a consistent design pattern for configuration, logging, and execution.
+All tools in this package inherit from the `FileBasedTool` base class and follow a consistent design pattern for configuration, logging, and execution.
 
 ## Available Tools
 
@@ -157,7 +157,7 @@ CSV columns include: Player Name, Sessions, Total Playtime (Hours), Kills (PvP),
 **See also:** The top-level README for more details on configuration and usage.
 
 **Script**: `kill_tracker.py`  
-**CLI Command**: `dayz-kill-tracker` or `bin/kill_tracker`
+**CLI Command**: `dayz-kill-tracker`
 
 Tracks and ranks player kills from DayZ server logs. The tool analyzes ADM log files to extract kill events, counts kills per player, and provides ranked statistics.
 
@@ -190,7 +190,7 @@ dayz-kill-tracker
 ### Duping Detector
 
 **Script**: `duping_detector.py`  
-**CLI Command**: `dayz-duping-detector` or `bin/duping_detector`
+**CLI Command**: `dayz-duping-detector`
 
 Identifies potential item duplication exploits by analyzing player behavior patterns and item spawns in server logs.
 
@@ -226,7 +226,7 @@ dayz-duping-detector --profile myserver
 ### Position Finder
 
 **Script**: `position_finder.py`  
-**CLI Command**: `dayz-position-finder` or `bin/position_finder`
+**CLI Command**: `dayz-position-finder`
 
 Comprehensive position and activity analysis tool for DayZ admin logs. Provides advanced filtering capabilities to search player positions, activities, and placements with support for multiple simultaneous filters and output formats.
 
@@ -323,7 +323,7 @@ dayz-position-finder --player "Player15957802" --placement "placed" --output-for
 ### Search Overtime Finder
 
 **Script**: `search_overtime_finder.py`  
-**CLI Command**: `dayz-search-overtime` or `bin/search_overtime_finder`
+**CLI Command**: `dayz-search-overtime`
 
 Identifies items in your server configuration that are causing search overtime or performance issues in the loot spawning system.
 
@@ -476,15 +476,13 @@ All tools can be imported and used in your Python scripts:
 
 ```python
 from dayz_admin_tools.tools.kill_tracker import KillTracker
-from dayz_admin_tools.tools.position_finder import PositionFinder
 from datetime import datetime
 
 # Load configuration
 config = KillTracker.load_config("myserver")  # or None for default
 
-# Create tool instances
+# Create tool instance
 tracker = KillTracker(config)
-finder = PositionFinder(config)
 
 # Run kill tracker analysis
 kill_count = tracker.run(
@@ -493,18 +491,4 @@ kill_count = tracker.run(
     end_datetime=datetime(2025, 5, 31)
 )
 print(f"Found {kill_count} total kills")
-
-# Find positions near coordinates
-nearby_positions = finder.find_nearby_positions(
-    target_x=7500, 
-    target_y=8500, 
-    radius=100.0
-)
-print(f"Found {len(nearby_positions)} positions near target")
-
-# Find positions for a specific player
-player_positions = finder.find_positions_by_player(
-    player_name_filter="SurvivorName"
-)
-print(f"Found {len(player_positions)} positions for player")
 ```
