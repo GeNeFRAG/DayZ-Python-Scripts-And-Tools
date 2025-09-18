@@ -218,7 +218,7 @@ class GenerateSpawnerEntries(XMLJSONTool):
             Dictionary with the generated entries
         """
         # Load valid items from types.xml
-        self.load_types_xml(types_xml_path)
+        self._load_types_xml(types_xml_path)
 
         # Prepare result structure
         result = {"Objects": []}
