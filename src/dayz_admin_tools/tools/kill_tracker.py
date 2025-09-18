@@ -395,7 +395,6 @@ class KillTracker(FileBasedTool):
             logger.info(f"Analysis complete: {kill_count} total kills from {len(sorted_kills)} players")
         else:
             logger.warning("No kill events found in the log files.")
-            result["success"] = False
             
         return result
         

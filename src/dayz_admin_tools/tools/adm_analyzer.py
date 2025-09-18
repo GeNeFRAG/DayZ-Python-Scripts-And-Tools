@@ -246,6 +246,8 @@ class DayZADMParser:
         'MeleeHammer', 'MeleeMachete', 'MeleePipe', 'MeleeCrowbar', 'MeleeSoft'
     }  # Cached set for efficient melee weapon detection
     
+    LINE_SAMPLE_MAX_LENGTH = 100  # Maximum length for malformed line samples
+    
     def __init__(self, 
                  config: Optional[Dict[str, Any]] = None, 
                  start_datetime: Optional[datetime] = None, 
