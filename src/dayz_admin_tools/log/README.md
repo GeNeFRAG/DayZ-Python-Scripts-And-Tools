@@ -7,8 +7,10 @@ Advanced tools for managing DayZ server logs with robust filtering, organization
 The Log module provides a comprehensive solution for downloading, filtering, and managing DayZ server log files. Built specifically for Nitrado-hosted servers, it offers powerful filtering options by dates, patterns, and reusable profiles to simplify log management tasks for server administrators.
 
 The module consists of two main components:
-1. **Log Downloader**: Downloads and filters server logs
-2. **Log Filter Profiles**: Manages reusable sets of filtering criteria
+1. **Log Downloader**: Downloads and filters server logs (inherits from `FileBasedTool`)
+2. **Log Filter Profiles**: Manages reusable sets of filtering criteria (inherits from `JSONTool`)
+
+Both tools provide consistent file handling, configuration management, and error logging capabilities through their respective base classes.
 
 ## Log Downloader
 
@@ -52,8 +54,8 @@ dayz-download-logs --verbose
 
 **Parameters**:
 - `--output-dir`: Directory to save logs to (optional, uses `general.log_download_path` from config if not specified)
-- `--start-date`: Start date for log files in YYYY-MM-DD format (optional)
-- `--end-date`: End date for log files in YYYY-MM-DD format (optional)
+- `--start-date`: Start date for log files in D.M.YYYY format (optional, e.g., 01.06.2025)
+- `--end-date`: End date for log files in D.M.YYYY format (optional, e.g., 30.06.2025)
 - `--pattern`: Filename pattern (e.g., "*.RPT" or "script_*.ADM") (optional, can be specified multiple times)
 - `--no-default`: Disable downloading latest .RPT and .ADM files when no other filters match (optional)
 - `--all`: Download all .RPT and .ADM files (optional)
@@ -110,9 +112,6 @@ The dedicated filter profiles tool provides more detailed management capabilitie
 # Create a new filter profile
 dayz-log-filter-profiles create weekly_rpt --start-date 01.06.2025 --end-date 07.06.2025 --patterns "*.RPT" --description "Weekly RPT logs"
 
-# View a specific profile
-dayz-log-filter-profiles view weekly_rpt
-
 # Delete a profile
 dayz-log-filter-profiles delete old_profile
 
@@ -124,15 +123,12 @@ dayz-log-filter-profiles create error_logs --patterns "*error*.RPT,*crash*.ADM" 
 
 **Create Command**:
 - `name`: Name for the profile (required)
-- `--start-date`: Start date in YYYY-MM-DD format (optional)
-- `--end-date`: End date in YYYY-MM-DD format (optional)
+- `--start-date`: Start date in D.M.YYYY format (optional, e.g., 01.06.2025)
+- `--end-date`: End date in D.M.YYYY format (optional, e.g., 30.06.2025)
 - `--patterns`: Comma-separated list of filename patterns (optional)
 - `--description`: Description of the profile (optional)
 - `--profile`: Configuration profile to use (optional)
 - `--console`: Log detailed output summary (optional)
-
-**View Command**:
-- `name`: Name of the profile to view (required)
 
 **Delete Command**:
 - `name`: Name of the profile to delete (required)
