@@ -193,6 +193,124 @@ class TypesToExcelTool(XMLTool):
             logger.debug(traceback.format_exc())
             return False
 
+    def _create_element_factory(self, use_lxml: bool = False):
+        """
+        Get the appropriate ElementTree factory based on lxml availability.
+
+        Args:
+            use_lxml: Whether to use lxml if available
+
+        Returns:
+            Tuple of (Element factory, SubElement factory, etree module)
+        """
+        if use_lxml and HAS_LXML:
+            from lxml import etree as LxmlET
+            return LxmlET.Element, LxmlET.SubElement, LxmlET
+        else:
+            return ET.Element, ET.SubElement, ET
+
+    def _add_numeric_fields(self, type_elem, row: pd.Series, subelement_func) -> None:
+        """
+        Add numeric field elements to the type element.
+
+        Args:
+            type_elem: The parent type element
+            row: Pandas Series containing the row data
+            subelement_func: Function to create subelements
+        """
+        for field in self.numeric_fields:
+            if pd.notna(row.get(field, pd.NA)):
+                elem = subelement_func(type_elem, field)
+                elem.text = str(int(row[field]))
+                elem.tail = '\n\t\t'
+
+    def _add_flags_element(self, type_elem, row: pd.Series, subelement_func) -> None:
+        """
+        Add flags element with attributes to the type element.
+
+        Args:
+            type_elem: The parent type element
+            row: Pandas Series containing the row data
+            subelement_func: Function to create subelements
+        """
+        flags = {col: val for col, val in row.items()
+                 if col in self.flag_columns and pd.notna(val)}
+        if flags:
+            flags_elem = subelement_func(type_elem, 'flags')
+            flags_elem.tail = '\n\t\t'
+            for flag, value in flags.items():
+                flags_elem.set(flag, str(int(value)))
+
+    def _add_category_element(self, type_elem, row: pd.Series, subelement_func) -> None:
+        """
+        Add category element to the type element.
+
+        Args:
+            type_elem: The parent type element
+            row: Pandas Series containing the row data
+            subelement_func: Function to create subelements
+        """
+        if pd.notna(row.get('category', pd.NA)) and row['category']:
+            category_elem = subelement_func(type_elem, 'category')
+            category_elem.tail = '\n\t\t'
+            category_elem.set('name', str(row['category']))
+
+    def _add_usage_elements(self, type_elem, row: pd.Series, subelement_func) -> None:
+        """
+        Add usage elements to the type element.
+
+        Args:
+            type_elem: The parent type element
+            row: Pandas Series containing the row data
+            subelement_func: Function to create subelements
+        """
+        usage_cols = [col for col in row.index if col.startswith('usage_')]
+        for col in usage_cols:
+            col_value = row.get(col)
+            if pd.notna(col_value) and col_value == 'X':
+                usage_elem = subelement_func(type_elem, 'usage')
+                usage_elem.tail = '\n\t\t'
+                usage_elem.set('name', col[6:])  # Remove 'usage_' prefix
+
+    def _add_tier_elements(self, type_elem, row: pd.Series, subelement_func) -> None:
+        """
+        Add tier (value) elements to the type element.
+
+        Args:
+            type_elem: The parent type element
+            row: Pandas Series containing the row data
+            subelement_func: Function to create subelements
+        """
+        tier_cols = [col for col in row.index if col.startswith('tier_')]
+        usage_cols = [col for col in row.index if col.startswith('usage_')]
+
+        for i, col in enumerate(tier_cols):
+            col_value = row.get(col)
+            if pd.notna(col_value) and col_value == 'X':
+                value_elem = subelement_func(type_elem, 'value')
+                value_elem.set('name', col[5:])  # Remove 'tier_' prefix
+
+                # Determine if this is the last element for proper indentation
+                is_last_element = (i == len(tier_cols) - 1 and
+                                   not any(pd.notna(row.get(c)) and row.get(c) == 'X' for c in usage_cols))
+
+                if not is_last_element:
+                    value_elem.tail = '\n\t\t'
+                else:
+                    value_elem.tail = '\n\t'  # Last element needs different indentation
+
+    def _finalize_element_formatting(self, type_elem) -> None:
+        """
+        Ensure proper formatting for the last child element.
+
+        Args:
+            type_elem: The type element to finalize
+        """
+        children = list(type_elem)
+        if children:
+            last_child = children[-1]
+            last_child.tail = '\n\t'  # Proper indentation for closing tag
+
     def create_type_element(self, row: pd.Series, use_lxml: bool = False) -> Any:
         """
         Create a type element from a row of Excel data.
@@ -204,100 +322,23 @@ class TypesToExcelTool(XMLTool):
         Returns:
             ElementTree Element for the type
         """
-        if use_lxml and HAS_LXML:
-            from lxml import etree as LxmlET
-            type_elem = LxmlET.Element('type')
-            type_elem.set('name', str(row['name']))
+        # Get appropriate element factories
+        element_func, subelement_func, _ = self._create_element_factory(use_lxml)
 
-            # Set text on the type element to ensure proper indentation
-            type_elem.text = '\n    '  # Child elements indented 4 spaces from type
+        # Create the main type element
+        type_elem = element_func('type')
+        type_elem.set('name', str(row['name']))
+        type_elem.text = '\n    '  # Child elements indented 4 spaces from type
 
-            # Add numeric fields
-            for i, field in enumerate(self.numeric_fields):
-                if pd.notna(row.get(field, pd.NA)):
-                    elem = LxmlET.SubElement(type_elem, field)
-                    elem.text = str(int(row[field]))
-                    # Add formatting for proper indentation
-                    elem.tail = '\n\t\t'
-        else:
-            type_elem = ET.Element('type')
-            type_elem.set('name', str(row['name']))
+        # Add all child elements using helper methods
+        self._add_numeric_fields(type_elem, row, subelement_func)
+        self._add_flags_element(type_elem, row, subelement_func)
+        self._add_category_element(type_elem, row, subelement_func)
+        self._add_usage_elements(type_elem, row, subelement_func)
+        self._add_tier_elements(type_elem, row, subelement_func)
 
-            # Set text on the type element to ensure proper indentation
-            type_elem.text = '\n    '  # Child elements indented 4 spaces from type
-
-            # Add numeric fields
-            for i, field in enumerate(self.numeric_fields):
-                if pd.notna(row.get(field, pd.NA)):
-                    elem = ET.SubElement(type_elem, field)
-                    elem.text = str(int(row[field]))
-                    # Add formatting for proper indentation
-                    elem.tail = '\n\t\t'
-
-        # Add flags
-        flags = {col: val for col, val in row.items()
-                 if col in self.flag_columns and pd.notna(val)}
-        if flags:
-            if use_lxml and HAS_LXML:
-                flags_elem = LxmlET.SubElement(type_elem, 'flags')
-                flags_elem.tail = '\n\t\t'
-            else:
-                flags_elem = ET.SubElement(type_elem, 'flags')
-                flags_elem.tail = '\n\t\t'
-
-            for flag, value in flags.items():
-                flags_elem.set(flag, str(int(value)))
-
-        # Add category if present
-        if pd.notna(row.get('category', pd.NA)) and row['category']:
-            if use_lxml and HAS_LXML:
-                category_elem = LxmlET.SubElement(type_elem, 'category')
-                category_elem.tail = '\n\t\t'
-            else:
-                category_elem = ET.SubElement(type_elem, 'category')
-                category_elem.tail = '\n\t\t'
-            category_elem.set('name', str(row['category']))
-
-        # Add usage values
-        usage_cols = [col for col in row.index if col.startswith('usage_')]
-        for i, col in enumerate(usage_cols):
-            col_value = row.get(col)
-            if pd.notna(col_value) and col_value == 'X':
-                if use_lxml and HAS_LXML:
-                    usage_elem = LxmlET.SubElement(type_elem, 'usage')
-                    usage_elem.tail = '\n\t\t'
-                else:
-                    usage_elem = ET.SubElement(type_elem, 'usage')
-                    usage_elem.tail = '\n\t\t'
-                usage_elem.set('name', col[6:])  # Remove 'usage_' prefix
-
-        # Add tier values
-        tier_cols = [col for col in row.index if col.startswith('tier_')]
-        for i, col in enumerate(tier_cols):
-            is_last_element = i == len(tier_cols) - 1 and not any(pd.notna(row.get(c))
-                                                                  and row.get(c) == 'X' for c in usage_cols)
-
-            col_value = row.get(col)
-            if pd.notna(col_value) and col_value == 'X':
-                if use_lxml and HAS_LXML:
-                    value_elem = LxmlET.SubElement(type_elem, 'value')
-                    if not is_last_element:
-                        value_elem.tail = '\n\t\t'
-                    else:
-                        value_elem.tail = '\n\t'  # Last element needs different indentation
-                else:
-                    value_elem = ET.SubElement(type_elem, 'value')
-                    if not is_last_element:
-                        value_elem.tail = '\n\t\t'
-                    else:
-                        value_elem.tail = '\n\t'  # Last element needs different indentation
-                value_elem.set('name', col[5:])  # Remove 'tier_' prefix
-
-        # If we have any child elements, make sure the last one has proper formatting
-        children = list(type_elem)
-        if children:
-            last_child = children[-1]
-            last_child.tail = '\n\t'  # Proper indentation for closing tag
+        # Ensure proper formatting for the last child element
+        self._finalize_element_formatting(type_elem)
 
         return type_elem
 
