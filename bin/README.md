@@ -37,6 +37,8 @@ Here are the primary tools available:
 - `kill-tracker` - Track and analyze player kills with rankings
 - `position-finder` - Find player positions and activities in logs
 - `search-overtime` - Identify items causing search overtime issues
+- `adm-analyzer` - Analyze ADM logs for patterns and issues
+- `event-spawn-plotter` - Plot and visualize event spawn locations
 
 ### XML Types Tools
 - `compare-types` - Compare two types.xml files and identify differences
