@@ -14,13 +14,13 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional
 
 from dayz_admin_tools.nitrado.api_client import NitradoAPIClient
-from ..base import DayZTool
+from ..base import FileBasedTool, DayZTool
 from .log_filter_profiles import LogFilterProfile
 
 # Configure logger
 logger = logging.getLogger(__name__)
 
-class NitradoLogDownloader(DayZTool):
+class NitradoLogDownloader(FileBasedTool):
     """Tool for downloading log files from a Nitrado-hosted DayZ server."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
@@ -31,6 +31,7 @@ class NitradoLogDownloader(DayZTool):
             config: Optional configuration dictionary.
         """
         super().__init__(config)
+        self.initialize_directories()
         self.api_client = NitradoAPIClient(config)
         self.filter_profiles = LogFilterProfile()
         
@@ -173,8 +174,7 @@ class NitradoLogDownloader(DayZTool):
             return False
 
         # Ensure output directory exists
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_path = Path(self.ensure_dir(output_dir))
             
         # Download matched files
         success = True
@@ -264,12 +264,12 @@ class NitradoLogDownloader(DayZTool):
         latest_default: bool = True,
         download_all: bool = False,
         save_profile: str = None
-    ) -> bool:
+    ) -> Dict[str, Any]:
         """
         Run the log downloader with the specified parameters.
         
         Args:
-            output_dir: Directory to save the downloaded files. If None, uses general.output_path from config.
+            output_dir: Directory to save the downloaded files. If None, uses general.log_download_path from config.
             start_date: Start date in D.M.YYYY format (e.g., 01.06.2023)
             end_date: End date in D.M.YYYY format (e.g., 30.06.2023)
             filename_patterns: List of Unix-style filename patterns
@@ -279,14 +279,14 @@ class NitradoLogDownloader(DayZTool):
             save_profile: If provided, save these filter settings as a profile with this name
             
         Returns:
-            bool: True if any files were downloaded successfully, False otherwise
+            Dictionary with download results and metadata
         """
         # Use the standard output path from config if not specified
         if output_dir is None:
-            output_dir = self.get_config('general.log_download_path', '.')
+            output_dir = self.get_config('general.log_download_path', self.log_dir or '.')
             logger.info(f"Using log directory from config: {output_dir}")
-            if output_dir == '.':
-                logger.warning("Could not find 'general.log_download_path' in config, using current directory as fallback.")
+            if output_dir == '.' or output_dir == self.log_dir:
+                logger.warning("Using default log directory. Consider setting 'general.log_download_path' in config.")
         
         # Log the output directory for better debugging
         logger.debug(f"Log downloader configured with output_dir: {output_dir}")
@@ -316,10 +316,16 @@ class NitradoLogDownloader(DayZTool):
         # Get log files information
         file_stats = self.get_logs_info()
         if not file_stats:
-            return False
+            return {
+                "success": False,
+                "error": "Failed to retrieve log files information",
+                "downloaded_files": 0,
+                "total_files": 0,
+                "output_dir": output_dir
+            }
             
         # Apply filters and download files
-        return self.filter_and_download_logs(
+        success = self.filter_and_download_logs(
             file_stats,
             output_dir=output_dir,
             start_date=start_date,
@@ -328,6 +334,19 @@ class NitradoLogDownloader(DayZTool):
             latest_default=latest_default,
             download_all=download_all
         )
+        
+        return {
+            "success": success,
+            "output_dir": output_dir,
+            "filter_applied": {
+                "start_date": start_date,
+                "end_date": end_date,
+                "filename_patterns": filename_patterns,
+                "filter_profile": filter_profile,
+                "download_all": download_all
+            },
+            "profile_saved": save_profile if save_profile else None
+        }
 
 
 def main():
@@ -480,7 +499,7 @@ def main():
             logger.warning("Could not find 'general.log_download_path' in config, using current directory as fallback.")
     
     # Run the downloader with specified options
-    success = downloader.run(
+    result = downloader.run(
         output_dir=output_dir,
         start_date=args.start_date,
         end_date=args.end_date,
@@ -491,7 +510,7 @@ def main():
         save_profile=args.save_filter
     )
     
-    return 0 if success else 1
+    return 0 if result.get("success", False) else 1
 
 
 if __name__ == "__main__":
