@@ -451,7 +451,7 @@ tool = ChangeMinMaxTool(config)
 
 # Update quantities
 result = tool.run("Ammo*", 15, 45, "types.xml")
-print(f"Updated {result['modified_count']} items")
+print(f"Updated {result['changes_count']} items")
 ```
 
 ### Copy Types Values Tool
