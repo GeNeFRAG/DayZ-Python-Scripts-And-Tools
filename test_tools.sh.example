@@ -265,6 +265,21 @@ test_tools() {
     # Execute dayz-player-list-manager with correctly quoted date parameters
     PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-player-list-manager whitelist add --identifiers "BIGGFISH35" --profile $CONFIG_PROFILE
     PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-player-list-manager whitelist remove --identifiers "BIGGFISH35" --profile $CONFIG_PROFILE
+
+    echo ""
+    echo -e "${BLUE}==============================${NC}"
+    echo -e "${BLUE}Running test: dayz-adm-analyzer${NC}"
+    echo -e "${BLUE}==============================${NC}"
+    # Test the ADM analyzer functionality
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-adm-analyzer --profile $CONFIG_PROFILE --output-prefix test_adm
+
+    echo ""
+    echo -e "${BLUE}=====================================${NC}"
+    echo -e "${BLUE}Running test: dayz-event-spawn-plotter${NC}"
+    echo -e "${BLUE}=====================================${NC}"
+    # Test the event spawn plotter functionality
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-event-spawn-plotter --list-events --profile $CONFIG_PROFILE
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-event-spawn-plotter --player-spawns --list-spawns --profile $CONFIG_PROFILE
 }
 
 # Test XML tools
@@ -327,13 +342,23 @@ test_xml_tools() {
     echo -e "${BLUE}==========================================${NC}"
     echo -e "${BLUE}Running test: dayz-sum-staticbuilder-items${NC}"
     echo -e "${BLUE}==========================================${NC}"
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticbuilder-items --profile $CONFIG_PROFILE
+    # This tool returns a count as exit code, so we handle it specially
+    set +e
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticbuilder-items --profile $CONFIG_PROFILE --console
+    BUILDER_COUNT=$?
+    set -e
+    echo -e "${GREEN}✓ Static builder items count: $BUILDER_COUNT${NC}"
     
     echo ""
     echo -e "${BLUE}=========================================${NC}"
-    echo -e "${BLUE}Running test dayz-sum-staticmildrop-items${NC}"
+    echo -e "${BLUE}Running test: dayz-sum-staticmildrop-items${NC}"
     echo -e "${BLUE}=========================================${NC}"
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticmildrop-items --profile $CONFIG_PROFILE
+    # This tool returns a count as exit code, so we handle it specially
+    set +e
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticmildrop-items --profile $CONFIG_PROFILE --console
+    MILDROP_COUNT=$?
+    set -e
+    echo -e "${GREEN}✓ Static military drop items count: $MILDROP_COUNT${NC}"
 
     REF_TYPES="/path/to/your/types.xml"
     if [ ! -f "$REF_TYPES" ]; then
