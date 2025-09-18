@@ -170,6 +170,115 @@ class SumStaticMilDropItemsTool(EventCounter):
 
         return result
 
+    @staticmethod
+    def display_single_result(result: Dict[str, Any], args) -> int:
+        """
+        Display results for a single analysis (standard or special).
+
+        Args:
+            result: Analysis result dictionary
+            args: Command line arguments (for debug flag)
+
+        Returns:
+            Total item count
+        """
+        if "error" in result:
+            logger.error(f"Error during tool execution: {result['error']}")
+            return 1
+
+        # Display results
+        logger.info("\nAnalysis complete:")
+        logger.info(f"- Event pattern: {result['event_pattern']}")
+        logger.info(f"- Group name: {result['group_name']}")
+        logger.info(f"- Events file: {result['events_file']}")
+        logger.info(f"- Groups file: {result['groups_file']}")
+        logger.info(f"- Event active: {'Yes' if result['active'] else 'No'}")
+        total_items = 0
+        if result['active']:
+            total_items = result['total_items']
+            logger.info(f"- Nominal value: {result['nominal']}")
+            logger.info(f"- Total items: {total_items}")
+            logger.info(f"- Ignored types: {', '.join(result['ignored_types'])}")
+        logger.info(f"- Results written to: {result['output_file']}")
+
+        # Print total count for shell script consumption
+        print(f"TOTAL_COUNT={total_items}")
+
+        return total_items
+
+    @staticmethod
+    def display_mildrop_analysis_section(result: Dict[str, Any], section_title: str) -> int:
+        """
+        Display results for a single mildrop analysis section.
+
+        Args:
+            result: Analysis result dictionary
+            section_title: Title for the section (e.g., "Standard Mildrop")
+
+        Returns:
+            Total item count for this analysis
+        """
+        logger.info(f"\n--- {section_title} ---")
+        logger.info(f"- Events file: {result['events_file']}")
+        logger.info(f"- Groups file: {result['groups_file']}")
+        logger.info(f"- Event active: {'Yes' if result['active'] else 'No'}")
+
+        total_items = 0
+        if result['active']:
+            total_items = result['total_items']
+            logger.info(f"- Nominal value: {result['nominal']}")
+            logger.info(f"- Total items: {total_items}")
+        logger.info(f"- Results written to: {result['output_file']}")
+
+        return total_items
+
+    @staticmethod
+    def display_combined_results(standard_result: Dict[str, Any], special_result: Dict[str, Any]) -> int:
+        """
+        Display combined results for both standard and special analyses.
+
+        Args:
+            standard_result: Standard mildrop analysis result
+            special_result: Special mildrop analysis result
+
+        Returns:
+            Combined total item count
+        """
+        # Check for errors first
+        if "error" in standard_result:
+            logger.error(f"Error during standard mildrop analysis: {standard_result['error']}")
+            return 1
+        if "error" in special_result:
+            logger.error(f"Error during special mildrop analysis: {special_result['error']}")
+            return 1
+
+        # Display combined results header
+        logger.info("\n=== COMBINED ANALYSIS COMPLETE ===")
+
+        # Display standard mildrop results
+        standard_total = SumStaticMilDropItemsTool.display_mildrop_analysis_section(
+            standard_result, "Standard Mildrop (StaticMildrop/Mildrop)"
+        )
+
+        # Display special mildrop results
+        special_total = SumStaticMilDropItemsTool.display_mildrop_analysis_section(
+            special_result, "Special Mildrop (StaticMildropSpecial/MildropSpecial)"
+        )
+
+        # Display combined totals
+        combined_total = standard_total + special_total
+        logger.info("\n--- Combined Totals ---")
+        logger.info(f"- Standard mildrop total: {standard_total}")
+        logger.info(f"- Special mildrop total: {special_total}")
+        logger.info(f"- Combined total: {combined_total}")
+
+        # Print total counts for shell script consumption
+        print(f"STANDARD_COUNT={standard_total}")
+        print(f"SPECIAL_COUNT={special_total}")
+        print(f"TOTAL_COUNT={combined_total}")
+
+        return combined_total
+
 
 def main():
     """Main function for the sum static mil drop items tool."""
@@ -226,59 +335,13 @@ def main():
             logger.debug("Initialized tool for StaticMildrop/Mildrop events")
             standard_result = standard_tool.run(args.events_xml, args.groups_xml, args.output_csv)
 
-            if "error" in standard_result:
-                logger.error(f"Error during standard mildrop analysis: {standard_result['error']}")
-                return 1
-
             # Analyze special mildrop
             special_tool = SumStaticMilDropItemsTool.for_special_mildrop(config)
             logger.debug("Initialized tool for StaticMildropSpecial/MildropSpecial events")
             special_result = special_tool.run(args.events_xml, args.groups_xml, args.output_csv)
 
-            if "error" in special_result:
-                logger.error(f"Error during special mildrop analysis: {special_result['error']}")
-                return 1
-
-            # Display combined results
-            logger.info("\n=== COMBINED ANALYSIS COMPLETE ===")
-
-            # Standard mildrop results
-            logger.info("\n--- Standard Mildrop (StaticMildrop/Mildrop) ---")
-            logger.info(f"- Events file: {standard_result['events_file']}")
-            logger.info(f"- Groups file: {standard_result['groups_file']}")
-            logger.info(f"- Event active: {'Yes' if standard_result['active'] else 'No'}")
-            standard_total = 0
-            if standard_result['active']:
-                standard_total = standard_result['total_items']
-                logger.info(f"- Nominal value: {standard_result['nominal']}")
-                logger.info(f"- Total items: {standard_total}")
-            logger.info(f"- Results written to: {standard_result['output_file']}")
-
-            # Special mildrop results
-            logger.info("\n--- Special Mildrop (StaticMildropSpecial/MildropSpecial) ---")
-            logger.info(f"- Events file: {special_result['events_file']}")
-            logger.info(f"- Groups file: {special_result['groups_file']}")
-            logger.info(f"- Event active: {'Yes' if special_result['active'] else 'No'}")
-            special_total = 0
-            if special_result['active']:
-                special_total = special_result['total_items']
-                logger.info(f"- Nominal value: {special_result['nominal']}")
-                logger.info(f"- Total items: {special_total}")
-            logger.info(f"- Results written to: {special_result['output_file']}")
-
-            # Combined totals
-            combined_total = standard_total + special_total
-            logger.info("\n--- Combined Totals ---")
-            logger.info(f"- Standard mildrop total: {standard_total}")
-            logger.info(f"- Special mildrop total: {special_total}")
-            logger.info(f"- Combined total: {combined_total}")
-
-            # Print total count for shell script consumption
-            print(f"STANDARD_COUNT={standard_total}")
-            print(f"SPECIAL_COUNT={special_total}")
-            print(f"TOTAL_COUNT={combined_total}")
-
-            return combined_total
+            # Display combined results using the new method
+            return SumStaticMilDropItemsTool.display_combined_results(standard_result, special_result)
 
         else:
             # Handle single type analysis (existing logic)
@@ -291,30 +354,8 @@ def main():
 
             result = tool.run(args.events_xml, args.groups_xml, args.output_csv)
 
-            if "error" in result:
-                logger.error(f"Error during tool execution: {result['error']}")
-                return 1
-
-            # Display results
-            logger.info("\nAnalysis complete:")
-            logger.info(f"- Event pattern: {result['event_pattern']}")
-            logger.info(f"- Group name: {result['group_name']}")
-            logger.info(f"- Events file: {result['events_file']}")
-            logger.info(f"- Groups file: {result['groups_file']}")
-            logger.info(f"- Event active: {'Yes' if result['active'] else 'No'}")
-            total_items = 0
-            if result['active']:
-                total_items = result['total_items']
-                logger.info(f"- Nominal value: {result['nominal']}")
-                logger.info(f"- Total items: {total_items}")
-                logger.info(f"- Ignored types: {', '.join(result['ignored_types'])}")
-            logger.info(f"- Results written to: {result['output_file']}")
-
-            # Print total count for shell script consumption
-            print(f"TOTAL_COUNT={total_items}")
-
-            # Return total count
-            return total_items
+            # Display results using the new method
+            return SumStaticMilDropItemsTool.display_single_result(result, args)
 
     except Exception as e:
         logger.error(f"Critical error: {str(e)}")
