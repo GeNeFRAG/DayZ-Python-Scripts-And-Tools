@@ -6,7 +6,6 @@ Processes a JSON file containing object positions and calculates the area,
 volume, and bounding box coordinates.
 """
 
-import json
 import argparse
 import os
 from math import ceil
@@ -23,67 +22,102 @@ __all__ = ['Calculate3DArea', 'main']
 class Calculate3DArea(JSONTool):
     """
     Calculate 3D areas from DayZ JSON object files.
-    
+
     This tool analyzes the positions of objects in a JSON file to calculate
     the volume and dimensions of the area these objects occupy, and generates
     box placements for the area.
     """
-    
+
     def __init__(self, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialize the Calculate3DArea tool.
-        
+
         Args:
             config: Optional configuration dictionary.
         """
         super().__init__(config)
-        # Note: directories are already initialized in the parent class
+        # Note: JSONTool parent class already calls initialize_directories()
         # and self.output_dir is already set
-    
+
     def run(self, json_file: str, max_box_size: int = 50) -> Dict[str, Any]:
         """
         Run the area calculation tool.
-        
+
         Args:
             json_file: Path to the JSON file containing object positions
             max_box_size: Maximum box size to consider for optimization
-            
+
         Returns:
             Dictionary with area calculation results
         """
         # Process the file and calculate areas
         result = self.calculate_area(json_file, max_box_size)
         return result
-        
+
     def calculate_area(self, json_file: str, max_box_size: int = 50) -> Dict[str, Any]:
         """
         Calculate 3D area from a JSON file of object positions.
-        
+
         Args:
             json_file: Path to the JSON file containing object positions
             max_box_size: Maximum box size to consider for optimization
-            
+
         Returns:
             Dictionary with area calculation results
         """
         logger.info(f"Processing JSON file: {json_file}")
-        
+
         # Load positions from the JSON file
         try:
             data = self.read_json(json_file)
-            
+
+            # Validate JSON structure
+            if not isinstance(data, dict):
+                logger.error(f"Invalid JSON format: Expected object, got {type(data).__name__}")
+                return {'error': 'Invalid JSON format: Expected object'}
+
             if 'Objects' not in data:
                 logger.error(f"Invalid JSON format: 'Objects' key not found in {json_file}")
-                return {'error': 'Invalid JSON format'}
-                
-            positions = [obj['pos'] for obj in data['Objects'] if 'pos' in obj]
-            
+                return {'error': 'Invalid JSON format: Missing Objects key'}
+
+            objects = data['Objects']
+            if not isinstance(objects, list):
+                logger.error(f"Invalid JSON format: 'Objects' should be a list, got {type(objects).__name__}")
+                return {'error': 'Invalid JSON format: Objects should be a list'}
+
+            # Extract and validate position data
+            positions = []
+            for i, obj in enumerate(objects):
+                if not isinstance(obj, dict):
+                    logger.warning(f"Skipping invalid object at index {i}: expected dict, got {type(obj).__name__}")
+                    continue
+
+                if 'pos' not in obj:
+                    logger.warning(f"Skipping object at index {i}: missing 'pos' field")
+                    continue
+
+                pos = obj['pos']
+                if not isinstance(pos, (list, tuple)) or len(pos) != 3:
+                    logger.warning(f"Skipping object at index {i}: invalid position format {pos}")
+                    continue
+
+                try:
+                    # Validate that positions are numbers
+                    x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
+                    positions.append([x, y, z])
+                except (ValueError, TypeError) as ve:
+                    logger.warning(f"Skipping object at index {i}: invalid position coordinates {pos}: {ve}")
+                    continue
+
             if not positions:
-                logger.warning(f"No position data found in {json_file}")
-                return {'error': 'No position data found'}
-                
-        except (json.JSONDecodeError, FileNotFoundError) as e:
+                logger.warning(f"No valid position data found in {json_file}")
+                return {'error': 'No valid position data found'}
+
+        except (FileNotFoundError, ValueError, KeyError) as e:
             logger.error(f"Error reading JSON file: {e}")
+            return {'error': str(e)}
+        except Exception as e:
+            logger.error(f"Unexpected error processing JSON file: {e}")
             return {'error': str(e)}
 
         # Initialize variables for calculations
@@ -101,10 +135,10 @@ class Calculate3DArea(JSONTool):
         dimension_x = max_x - min_x
         dimension_y = max_y - min_y
         dimension_z = max_z - min_z
-        
+
         area = dimension_x * dimension_z
         volume = area * dimension_y
-        
+
         # Calculate the lowest point in the middle
         middle_x = (min_x + max_x) / 2
         middle_z = (min_z + max_z) / 2
@@ -141,13 +175,10 @@ class Calculate3DArea(JSONTool):
         output_filename = self.generate_timestamped_filename(
             f"{Path(json_file).stem}", "json", suffix="boxes"
         )
-        output_file = os.path.join(self.output_dir, output_filename)
-        
-        # Ensure the output directory exists
-        self.ensure_dir(self.output_dir)
-            
-        self.write_json(output_data, output_file)
-        
+
+        # Write to output directory (base class handles path resolution)
+        output_file = self.write_json(output_data, output_filename)
+
         # Log calculation results
         logger.info("\nLowest Middle Point Visualization:")
         logger.info("════════════════════════════════════════════════")
@@ -181,7 +212,7 @@ class Calculate3DArea(JSONTool):
         logger.info(f"Length (X): {dimension_x:.2f}m")
         logger.info(f"Height (Y): {dimension_y:.2f}m")
         logger.info(f"Width (Z): {dimension_z:.2f}m")
-        
+
         logger.info("\nOptimal Box Placement Summary:")
         logger.info(f"Optimal Box Dimensions: {box_width}x{box_height}x{box_length}")
         logger.info(f"Number of boxes along X: {num_boxes_x}")
@@ -208,23 +239,24 @@ class Calculate3DArea(JSONTool):
             'optimal_box': {
                 'dimensions': optimal_box_size,
                 'count_x': num_boxes_x,
-                'count_y': num_boxes_y, 
+                'count_y': num_boxes_y,
                 'count_z': num_boxes_z,
                 'total': len(boxes)
             },
             'output_file': output_file
         }
 
-    def find_optimal_box_size(self, dimension_x: float, dimension_y: float, dimension_z: float, max_box_size: int) -> List[int]:
+    def find_optimal_box_size(self, dimension_x: float, dimension_y: float,
+                              dimension_z: float, max_box_size: int) -> List[int]:
         """
         Find the optimal box size for filling the given volume.
-        
+
         Args:
             dimension_x: X dimension of the area
             dimension_y: Y dimension of the area
             dimension_z: Z dimension of the area
             max_box_size: Maximum box size to consider
-            
+
         Returns:
             List containing optimal [width, height, length]
         """
@@ -242,8 +274,9 @@ class Calculate3DArea(JSONTool):
                 optimal_box_size = [box_width, box_height, box_length]
 
         return optimal_box_size
-    
+
 # Standard arguments are now added from the base DayZTool class
+
 
 def main():
     """
@@ -252,23 +285,23 @@ def main():
     parser = argparse.ArgumentParser(
         description='Calculate 3D area from a JSON file of DayZ object positions and generate optimal box placements.'
     )
-    parser.add_argument('json_file', type=str, 
-                      help='Path to the JSON file containing object positions')
+    parser.add_argument('json_file', type=str,
+                        help='Path to the JSON file containing object positions')
     parser.add_argument('--max-box-size', type=int, default=50,
-                      help='Maximum box size to consider for optimization (default: 50)')
-    
+                        help='Maximum box size to consider for optimization (default: 50)')
+
     # Add standard arguments from base class
     from ..base import DayZTool
     DayZTool.add_standard_arguments(parser)
     args = parser.parse_args()
-    
+
     # Load configuration
     config = DayZTool.load_config(args.profile)
-    
+
     # Create and run the tool
     calculator = Calculate3DArea(config)
     results = calculator.run(args.json_file, args.max_box_size)
-    
+
     # Log a summary if requested
     if args.console and 'error' not in results:
         logger.info("\nSummary:")
