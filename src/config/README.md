@@ -70,8 +70,7 @@ All configuration files use JSON format. Here's an example structure based on th
     "log_download_path": "logs"
   },
   "log_filtering": {
-    "default_patterns": ["*.RPT", "*.ADM"],
-    "default_limit": 2
+    "default_patterns": ["*.RPT", "*.ADM"]
   },
   "log": {
     "filter_profiles_dir": "~/.config/dayz_admin_tools/log_profiles"
@@ -94,12 +93,12 @@ All configuration files use JSON format. Here's an example structure based on th
     }
   },
   "paths": {
-    "types_file": "/path/to/your/types.xml",
-    "types_file_ref": "/path/to/your/types_ref.xml",
-    "mapgroupproto_file": "/path/to/your/mapgroupproto.xml",
-    "cfglimitsdefinition_file": "/path/to/your/cfglimitsdefinition.xml",
-    "events_file": "/path/to/your/events.xml",
-    "event_groups_file": "/path/to/your/cfgeventgroups.xml"
+    "types_file": "data/server/types.xml",
+    "types_file_ref": "data/reference/types_reference.xml",
+    "mapgroupproto_file": "data/server/mapgroupproto.xml",
+    "cfglimitsdefinition_file": "data/server/cfglimitsdefinition.xml",
+    "events_file": "data/server/events.xml",
+    "event_groups_file": "data/server/cfgeventgroups.xml"
   }
 }
 ```
@@ -147,6 +146,13 @@ profiles = config.list_profiles()
 # Switch to a different profile
 success = config.switch_profile('other_profile')
 ```
+
+**Method Details:**
+- `get(path: str = None, default: Any = None) -> Any`: Get configuration value using dot notation
+- `get_path(path_key: str, fallback: str = None) -> str`: Get file path with automatic resolution
+- `get_full_config() -> Dict[str, Any]`: Return complete configuration dictionary
+- `list_profiles() -> List[str]`: List all available profile names
+- `switch_profile(profile: str) -> bool`: Switch to different profile, returns success status
 
 ### Creating Your Own Profile
 
@@ -220,7 +226,6 @@ Common settings used across all tools:
 ### `log_filtering`
 Settings for log file filtering:
 - `default_patterns`: Array of file patterns to match (default: ["*.RPT", "*.ADM"])
-- `default_limit`: Maximum number of files to download (default: 2)
 
 ### `log`
 Log-specific settings:
@@ -259,3 +264,28 @@ File paths for various tools:
 3. **Create separate profiles for different environments**: Use different profiles for development, testing, and production.
 4. **Use relative paths where possible**: This makes configurations portable across different machines.
 5. **Provide default values when getting config**: Use `config.get('key.path', default='fallback')` to handle missing values gracefully.
+
+## Troubleshooting
+
+### Common Issues
+
+**Profile not found error**:
+```
+Profile 'my_server' not found. Using empty configuration.
+```
+- **Solution**: Ensure the profile file exists in `src/config/profiles/my_server.json`
+- **Alternative**: Copy `default.json` to create your new profile
+
+**Configuration value returns None**:
+```python
+value = config.get('some.key')  # Returns None
+```
+- **Solution**: Use default values: `config.get('some.key', 'default_value')`
+- **Check**: Verify the key path exists in your profile JSON
+
+**Import errors**:
+```
+ImportError: No module named 'config'
+```
+- **Solution**: Ensure you're running from the correct directory with `src/` in your Python path
+- **Alternative**: Use absolute imports: `from src.config import Config`
