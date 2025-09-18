@@ -5,12 +5,12 @@ This directory contains sensitive configuration information like API keys, serve
 
 ## Files in This Directory
 
-- `default_secrets.json`: Default secrets loaded for all profiles 
+- `<profile>_secrets.json`: Profile-specific secrets files (e.g., `default_secrets.json`, `my_server_secrets.json`)
 - `profile_secrets.json.example`: Example format for profile-specific secrets
 
 ## Nitrado API Credentials
 
-The secrets files contain the following Nitrado API credentials:
+The secrets files typically contain the following Nitrado API credentials:
 
 - `api_token`: Your Nitrado API token for authentication
 - `service_id`: The service ID for your Nitrado game server
@@ -18,31 +18,16 @@ The secrets files contain the following Nitrado API credentials:
 
 ## Creating Secrets Files
 
-### Default Secrets
-
-To set up shared secrets that apply to all profiles:
-
-1. If not already present, create a `default_secrets.json` file:
-   ```json
-   {
-       "api_token": "YOUR_NITRADO_API_TOKEN",
-       "service_id": "YOUR_NITRADO_SERVICE_ID",
-       "server_id": "YOUR_GAME_SERVER_ID"
-   }
-   ```
-
-2. Replace the placeholder values with your actual credentials
-
 ### Profile-specific Secrets
 
-For secrets specific to a profile, create a file named `<profile_name>_secrets.json`:
+Create a secrets file named `<profile_name>_secrets.json` for each profile that needs secret credentials:
 
 1. Create a new secrets file for your profile:
    ```bash
    cp profile_secrets.json.example my_server_secrets.json  # for profile "my_server"
    ```
 
-2. Edit with profile-specific Nitrado credentials:
+2. Edit with your profile-specific Nitrado credentials:
    ```json
    {
        "api_token": "profile-specific-api-token",
@@ -51,14 +36,27 @@ For secrets specific to a profile, create a file named `<profile_name>_secrets.j
    }
    ```
 
-The configuration system prioritizes profile-specific secrets over default secrets, allowing you to maintain different credentials for different server environments.
+### Default Profile Secrets
+
+For the default profile, create a `default_secrets.json` file:
+
+```json
+{
+    "api_token": "YOUR_NITRADO_API_TOKEN",
+    "service_id": "YOUR_NITRADO_SERVICE_ID",
+    "server_id": "YOUR_GAME_SERVER_ID"
+}
+```
 
 ## How Secrets Are Loaded
 
-1. The configuration system automatically reads these files
-2. Secret files are loaded after regular profiles
-3. Profile-specific secrets override default secrets
-4. All secrets override any identical keys in profile configs
+The configuration system loads secrets that correspond to the currently active profile only:
+
+1. When a profile is loaded (e.g., `my_server`), the system looks for a corresponding secrets file (e.g., `my_server_secrets.json`).
+2. If the secrets file is found, its contents are merged into the configuration, overriding any identical keys from the profile's JSON file.
+3. If no secrets file exists for the profile, a warning is logged but loading continues without secrets.
+
+Each profile has its own separate secrets file, maintaining isolation between different server environments.
 
 ## Obtaining Nitrado Credentials
 
@@ -80,10 +78,13 @@ To get your Nitrado API credentials:
 }
 ```
 
-### Accessing Secrets in Code
+## Accessing Secrets in Code
+
+Secrets are accessed through the configuration system like any other configuration value:
 
 ```python
-from config import config
+# Import from the correct location
+from src.config.config import config
 
 # Access secret values the same way as regular config
 api_token = config.get('api_token')
@@ -94,6 +95,9 @@ server_id = config.get('server_id')
 import requests
 
 def get_server_details():
+    api_token = config.get('api_token')
+    service_id = config.get('service_id')
+    
     headers = {'Authorization': f'Bearer {api_token}'}
     url = f'https://api.nitrado.net/services/{service_id}/gameservers'
     response = requests.get(url, headers=headers)
