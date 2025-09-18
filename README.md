@@ -23,9 +23,6 @@ A Python package for DayZ server administration, providing tools for server mana
 ```bash
 # From the repository root
 pip install -e .
-
-# For visualization features (event spawn plotter), ensure matplotlib and Pillow are installed:
-pip install matplotlib Pillow
 ```
 
 Note: The event spawn plotter requires `matplotlib` and `Pillow` for image plotting functionality. These are included in the default installation.
@@ -112,15 +109,14 @@ All configured special events will be extracted, counted per player, and include
 - **Player List Manager**: Manage player lists (ban, whitelist, priority) via Nitrado API and analyze banned connection attempts from RPT logs (`dayz-player-list-manager`)
 - **ADM Log Analyzer**: Comprehensive analysis of DayZ AdminLog (ADM) files for player and combat statistics, building activity, and more. Generates Markdown summary reports (`dayz-adm-analyzer`)
 - **Event Spawn Plotter**: Visualize event spawn positions from cfgeventspawns.xml files and player spawn points from cfgplayerspawnpoints.xml files on map images with coordinate annotations (`dayz-event-spawn-plotter`)
+- **Position Finder**: Find player positions and activities in log files (`dayz-position-finder`)
+- **Duping Detector**: Detect suspicious duplication activities and login patterns (`dayz-duping-detector`)
+- **Kill Tracker**: Track player kills and deaths with rankings (`dayz-kill-tracker`)
 
 
 ### Log Tools
 
-- **ADM Log Analyzer**: Analyze DayZ ADM logs for player sessions, combat, building, and more. Outputs a Markdown summary with top players, builders, weapons, killer, and damage (`dayz-adm-analyzer`)
-- **Position Finder**: Find player positions and activities in log files (`dayz-position-finder`)
-- **Duping Detector**: Detect suspicious duplication activities and login patterns (`dayz-duping-detector`)
 - **Search Overtime**: Find overtime issues in logs (`dayz-search-overtime`)
-- **Kill Tracker**: Track player kills and deaths with rankings (`dayz-kill-tracker`)
 - **Log Downloader**: Download server logs from Nitrado with filtering (`dayz-download-logs`)
 - **Log Filter Profiles**: Manage reusable log filtering profiles (`dayz-log-filter-profiles`)
 
@@ -151,7 +147,7 @@ dayz-types-to-excel --to-excel --input types.xml --output types.xlsx
 dayz-sort-types-usage --xml types.xml
 
 # Check usage tags against cfglimitsdefinition.xml
-dayz-check-usage-tags --xml_file types.xml
+dayz-check-usage-tags --xml-file types.xml
 
 # Compare mapgroupproto files to find missing groups
 dayz-compare-missing-groups vanilla_mapgroupproto.xml custom_mapgroupproto.xml --output group_comparison.csv
@@ -194,13 +190,16 @@ Analyze server logs for useful information:
 
 ```bash
 # Analyze ADM logs and generate a Markdown summary report
-dayz-adm-analyzer --profile my_server --output-prefix my_report
+dayz-adm-analyzer --profile my_server --prefix my_report
 
 # Download logs from Nitrado server
 dayz-download-logs --start-date 10.06.2025 --end-date 17.06.2025
 
 # Find player positions in logs
 dayz-position-finder --player "SurvivorName" --target-x 7500 --target-y 8500 --radius 100
+
+# Find positions with specific file pattern
+dayz-position-finder --file_pattern "*.ADM" --player "SurvivorName" --target-x 7500 --target-y 8500 --radius 100
 
 # Detect possible duping activity
 dayz-duping-detector --proximity-threshold 10 --time-threshold 30
@@ -209,10 +208,10 @@ dayz-duping-detector --proximity-threshold 10 --time-threshold 30
 dayz-kill-tracker --start "01.05.2025 00:00:00" --end "31.05.2025 23:59:59"
 
 # Visualize event spawn locations on map
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --map map.jpg --event StaticHeliCrash
+dayz-event-spawn-plotter --event StaticHeliCrash
 
 # List available events in XML file
-dayz-event-spawn-plotter --xml cfgeventspawns.xml --list-events
+dayz-event-spawn-plotter --list-events
 ```
 ### ADM Log Analyzer Example
 
@@ -272,7 +271,7 @@ Work with DayZ's JSON configuration files:
 dayz-calculate-3d-area input.json --max-box-size 50
 
 # Generate spawner entries with items and positions
-dayz-generate-spawner-entries "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
+dayz-generate-spawner-entries generate "Barrel_Green:2:7500:300:7600" "AKM:5:7510:300:7610" --output spawner.json
 
 # Split large loot structure files
 dayz-split-loot-structures --types-xml types.xml --input-json large_structures.json
