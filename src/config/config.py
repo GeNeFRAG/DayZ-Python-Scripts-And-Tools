@@ -27,7 +27,7 @@ from typing import Dict, Any, List, Optional
 from pathlib import Path
 
 # Import DayZ base classes
-from src.dayz_admin_tools.base import JSONTool, logger
+from dayz_admin_tools.base import JSONTool, logger
 
 
 class Config(JSONTool):
