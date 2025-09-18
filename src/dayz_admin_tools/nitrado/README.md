@@ -8,10 +8,11 @@ This package provides a generic wrapper for the Nitrado API, allowing interactio
 
 ### API Client (`api_client.py`)
 
-The `NitradoAPIClient` class provides a clean, generic interface for interacting with the Nitrado API:
+The `NitradoAPIClient` class provides a clean, generic interface for interacting with the Nitrado API. It inherits from the `DayZTool` base class, ensuring consistent configuration management and logging capabilities.
 
+Key features:
 - Authentication with API tokens
-- File operations (list, download, upload)
+- File operations (list, download)
 - Player list management (ban lists, whitelist, priority/admin lists)
 - Server settings management
 
@@ -37,9 +38,6 @@ for file in files:
 content = client.download_file('/games/12345/ftproot/dayzxb/config/server.cfg')
 with open('local_server.cfg', 'wb') as f:
     f.write(content)
-    
-# Upload a file
-client.upload_file('local_types.xml', '/games/12345/ftproot/dayzxb/mpmissions/dayzOffline.chernarusplus/db/types.xml')
 
 # Player List Management
 # Get current ban list
@@ -59,7 +57,7 @@ client.add_to_whitelist(['admin1', 'moderator2'])
 client.remove_from_whitelist(['former_admin'])
 
 # Priority/Admin list operations
-admin_list = client.get_prioritylist()  # or get_adminlist()
+admin_list = client.get_prioritylist()
 client.add_to_prioritylist(['new_admin'])
 client.remove_from_prioritylist(['demoted_admin'])
 
@@ -75,7 +73,6 @@ client.remove_from_list('priority', ['old_admin'])
 *File Operations:*
 - `list_files(directory_path)`: List files in a remote directory
 - `download_file(remote_path)`: Download a file and return its content as bytes
-- `upload_file(local_path, remote_path)`: Upload a local file to the remote server
 
 *Player List Management:*
 - `get_banlist()`, `get_whitelist()`, `get_prioritylist()`: Retrieve player lists
@@ -154,7 +151,7 @@ The API client uses the configuration system provided by the `dayz_admin_tools` 
 {
   "nitrado_server": {
     "mission_directory": "dayzOffline.chernarusplus",
-    "remote_base_path": "/gameservers/file_server",
+    "remote_base_path": "/gameserver",
     "ssl_verify": false
   }
 }
