@@ -404,7 +404,3 @@ Each module includes its own README with detailed documentation:
 - [Tools Module](src/dayz_admin_tools/tools/README.md) - General admin tools for player tracking
 - [Nitrado Module](src/dayz_admin_tools/nitrado/README.md) - Nitrado API integration
 - [Configuration System](src/config/README.md) - Configuration management documentation
-
-## License
-
-This project is open source and available under the MIT License.
