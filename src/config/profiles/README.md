@@ -40,7 +40,6 @@ Common settings used across all tools:
 ### `log_filtering`
 Settings for log file filtering:
 - `default_patterns`: Array of file patterns to match (default: ["*.RPT", "*.ADM"])
-- `default_limit`: Maximum number of files to download (default: 2)
 
 ### `log`
 Log-specific settings:
@@ -51,6 +50,25 @@ Nitrado server connection settings:
 - `mission_directory`: Mission directory name (e.g., "dayzOffline.chernarusplus")
 - `remote_base_path`: Base path on the remote server (default: "/gameservers/file_server")
 - `ssl_verify`: Whether to verify SSL connections (default: false)
+
+### `object_spawner`
+Settings for the object spawner tool:
+- `default_filename`: Default output filename for generated spawners
+- `default_coordinates`: Default coordinates for spawned items
+
+### `event_counter`
+Settings for static event item counters:
+- `output_files`: Mapping of event prefixes to output CSV filenames
+- `default_output_file`: Default output filename for unmapped events
+
+### `event_spawn_plotter`
+Settings for the event spawn plotter tool:
+- `map_file`: Path to the map image
+- `map_width`, `map_height`: Dimensions of the map
+- `output_dpi`: DPI for the output image
+- `marker_size`, `marker_color`, `marker_alpha`: Marker styling
+- `show_coordinates`, `show_legend`: Control display of annotations
+- `default_spawn_type`: Default player spawn type to plot
 
 ### `duping_detector`
 Settings for the duping detection tool:
@@ -65,6 +83,14 @@ Settings for the search overtime finder tool:
   - `overtime`: Pattern for overtime items
   - `hard_to_place`: Pattern for hard-to-place items
 
+### `special_events`
+Custom event definitions for the ADM Log Analyzer:
+- `enabled`: Enable or disable custom event extraction
+- `events`: An array of custom event objects, each with:
+  - `name`: A unique identifier for the event
+  - `regexp`: The regular expression to match the event in log lines
+  - `description`: A brief description of the event
+
 ### `paths`
 File paths for various tools:
 - `types_file`: Path to the main types.xml file
@@ -72,7 +98,9 @@ File paths for various tools:
 - `mapgroupproto_file`: Path to the mapgroupproto.xml file
 - `cfglimitsdefinition_file`: Path to the cfglimitsdefinition.xml file
 - `events_file`: Path to the events.xml file
+- `eventspawns_file`: Path to the cfgeventspawns.xml file
 - `event_groups_file`: Path to the cfgeventgroups.xml file
+- `player_spawns_file`: Path to the cfgplayerspawnpoints.xml file
 
 ## Example Profile Structure
 
@@ -87,8 +115,7 @@ File paths for various tools:
     "log_download_path": "logs"
   },
   "log_filtering": {
-    "default_patterns": ["*.RPT", "*.ADM"],
-    "default_limit": 2
+    "default_patterns": ["*.RPT", "*.ADM"]
   },
   "log": {
     "filter_profiles_dir": "~/.config/dayz_admin_tools/log_profiles"
@@ -98,6 +125,29 @@ File paths for various tools:
     "remote_base_path": "/gameservers/file_server",
     "ssl_verify": false
   },
+  "object_spawner": {
+    "default_filename": "16355842-shop.json",
+    "default_coordinates": "10106.6:8.7:1696.5"
+  },
+  "event_counter": {
+    "output_files": {
+      "StaticMildrop": "md_loot.csv",
+      "StaticBuilder_": "sb_loot.csv"
+    },
+    "default_output_file": "event_loot.csv"
+  },
+  "event_spawn_plotter": {
+    "map_file": "path/to/map.jpg",
+    "map_width": 15360,
+    "map_height": 15360,
+    "output_dpi": 300,
+    "marker_size": 120,
+    "marker_color": "red",
+    "marker_alpha": 0.6,
+    "show_coordinates": false,
+    "show_legend": false,
+    "default_spawn_type": "fresh"
+  },
   "duping_detector": {
     "proximity_threshold": 10,
     "time_threshold": 60,
@@ -106,9 +156,18 @@ File paths for various tools:
   },
   "search_overtime_finder": {
     "patterns": {
-      "overtime": "Item \\[\\d+\\] causing search overtime: \"(.*?)\"",
-      "hard_to_place": "LootRespawner\\] \\(PRIDummy\\) :: Item \\[\\d+\\] is hard to place, performance drops: \"(.*?)\""
+      "overtime": "Item \\[\\d+\\] causing search overtime: \\\"(.*?)\\\"",
+      "hard_to_place": "LootRespawner\\] \\(PRIDummy\\) :: Item \\[\\d+\\] is hard to place, performance drops: \\\"(.*?)\\\""
     }
+  },
+  "special_events": {
+    "enabled": true,
+    "events": [
+      {
+        "name": "treasure_hunt",
+        "regexp": "Player \\\"[^\\\"]+\\\"\\\\s*\\\\(id=[A-F0-9]+\\\\s*pos=<[0-9.-]+,\\\\s*[0-9.-]+,\\\\s*[0-9.-]+>\\\\)Player [^<]+<[^>]+> Dug out [^<]+<[^>]+> at position 0x[0-9a-f]+ \\\\{<[0-9.-]+,[0-9.-]+,[0-9.-]+>\\\\}"
+      }
+    ]
   },
   "paths": {
     "types_file": "/path/to/your/types.xml",
@@ -116,7 +175,9 @@ File paths for various tools:
     "mapgroupproto_file": "/path/to/your/mapgroupproto.xml",
     "cfglimitsdefinition_file": "/path/to/your/cfglimitsdefinition.xml",
     "events_file": "/path/to/your/events.xml",
-    "event_groups_file": "/path/to/your/cfgeventgroups.xml"
+    "eventspawns_file": "/path/to/your/cfgeventspawns.xml",
+    "event_groups_file": "/path/to/your/cfgeventgroups.xml",
+    "player_spawns_file": "/path/to/your/cfgplayerspawnpoints.xml"
   }
 }
 ```
