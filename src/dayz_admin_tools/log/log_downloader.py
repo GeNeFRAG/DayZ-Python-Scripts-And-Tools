@@ -49,7 +49,8 @@ class NitradoLogDownloader(FileBasedTool):
         logger.info("Getting log files information from Nitrado...")
 
         if log_directory is None:
-            log_directory = f"/games/{self.api_client.server_id}/ftproot/dayzxb/config/"
+            # Use relative path without leading slash - should be relative to remote_base_path
+            log_directory = f"games/{self.api_client.server_id}/ftproot/dayzxb/config/"
 
         try:
             # Get file entries directly using the API client's list_files method
