@@ -6,7 +6,7 @@ A collection of tools for working with DayZ JSON files, enabling efficient serve
 
 The JSON module provides specialized utilities for processing DayZ's JSON format files, which are commonly used for object placement, item spawning, and other server configuration tasks. These tools help server administrators analyze item distributions, calculate areas, generate spawner configurations, and organize objects for effective server management.
 
-All tools in this module inherit from the `JSONTool` base class, providing consistent file handling, configuration management, and error logging capabilities.
+Most tools in this module inherit from the `XMLJSONTool` hybrid base class (which provides both XML and JSON capabilities), while the area calculation tool inherits from the specialized `JSONTool` base class. All tools provide consistent file handling, configuration management, and error logging capabilities.
 
 ## Available Tools
 
@@ -303,6 +303,9 @@ All JSON tools support these standard command-line parameters:
     "log_level": "INFO",
     "debug": false
   },
+  "paths": {
+    "types_file": "path/to/types.xml"
+  },
   "object_spawner": {
     "default_filename": "16355842-shop.json",
     "default_coordinates": "10106.6:8.5:1696.5"
@@ -310,11 +313,16 @@ All JSON tools support these standard command-line parameters:
 }
 ```
 
+**Configuration Usage by Tool**:
+- **All tools**: Use `general` section for basic operation settings
+- **Tools requiring types.xml** (generate_spawner_entries, sum_items_json, split_loot_structures): Use `paths.types_file` if not specified via command line
+- **generate_spawner_entries**: Uses `object_spawner` section for default coordinates and output filename
+
 ## Common Base Functionality
 
-All JSON tools inherit from the `JSONTool` base class, which provides:
+The JSON tools inherit from either the specialized `JSONTool` base class (for area calculation) or the hybrid `XMLJSONTool` base class (for tools that work with both XML and JSON), which provides:
 
-- Standard JSON file reading and writing
+- Standard JSON file reading and writing (and XML support where applicable)
 - Path resolution and directory management
 - Consistent error handling and logging
 - Configuration integration
