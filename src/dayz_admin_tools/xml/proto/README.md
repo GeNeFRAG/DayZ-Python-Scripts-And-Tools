@@ -189,10 +189,10 @@ tool = DeathmatchConfigTool(config)
 # Set up parameters
 tool.mapgrouppos_file = "mapgrouppos.xml"
 tool.mapgroupproto_file = "mapgroupproto.xml"
-tool.ur_x = 1000
-tool.ur_y = 1000
-tool.ll_x = 500
-tool.ll_y = 500
+tool.deathmatch_area = (
+    (500, 500),    # Lower left coordinates (ll_x, ll_y)
+    (1000, 1000)   # Upper right coordinates (ur_x, ur_y)
+)
 tool.usage_tag = "Deathmatch"
 
 # Run the tool
