@@ -248,6 +248,10 @@ class DayZADMParser:
     
     LINE_SAMPLE_MAX_LENGTH = 100  # Maximum length for malformed line samples
     
+    # Combat event constants
+    MAX_RECENT_COMBAT_EVENTS = 100  # Maximum recent combat events to track for duplicate detection
+    TRIMMED_RECENT_EVENTS_SIZE = 50  # Size to trim to when max is exceeded
+    
     def __init__(self, 
                  config: Optional[Dict[str, Any]] = None, 
                  start_datetime: Optional[datetime] = None, 
