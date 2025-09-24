@@ -90,8 +90,7 @@ The API works with your actual server directories (same as local DayZ server str
 **Directories:**
 - `custom/` → Custom spawn configurations (`vanillaplus_loadout.json`, `flags_epic_bambi.json`)
 - `db/` → Core database files (`events.xml`, `types.xml`, `globals.xml`)
-- `build/` → Build configurations
-- `env/` → Environment settings
+- `env/` → Animal and Zombie territories (`bear_territories.xml`, `wolf_territories.xml`, `zombie_territories.xml`)
 
 **DO NOT** use absolute paths like `/games/12345/ftproot/` - the API expects relative paths from gameserver root.
 
