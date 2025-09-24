@@ -29,14 +29,22 @@ config = NitradoAPIClient.load_config('my_profile')  # or None for default
 # Initialize the API client
 client = NitradoAPIClient(config)
 
-# List files in a directory
-files = client.list_files('/games/12345/ftproot/dayzxb/config/')
+# List files in a directory (use relative paths from gameserver root)
+files = client.list_files('config/')
 for file in files:
     print(f"{file['name']} - {file['size']} bytes")
 
-# Download a file
-content = client.download_file('/games/12345/ftproot/dayzxb/config/server.cfg')
+# List files in mission-specific directory
+files = client.list_files('dayzxb/config/')
+
+# Download a file (use relative path from gameserver root)
+content = client.download_file('config/server.cfg')
 with open('local_server.cfg', 'wb') as f:
+    f.write(content)
+
+# Download mission-specific files
+content = client.download_file('dayzxb/config/types.xml')
+with open('types.xml', 'wb') as f:
     f.write(content)
 
 # Player List Management
@@ -67,6 +75,23 @@ ban_list = client.get_list('bans')
 client.add_to_list('whitelist', ['player1', 'player2'])
 client.remove_from_list('priority', ['old_admin'])
 ```
+
+### Understanding File Paths
+
+The Nitrado API client handles paths relative to your gameserver root directory. The client automatically constructs the full API URL using:
+
+- Base URL: `https://api.nitrado.net/services/`
+- Service ID: From your configuration
+- Base path: `/gameserver` (configurable via `nitrado_server.remote_base_path`)
+- Your specified directory: Passed as query parameter
+
+**Path Examples:**
+- `config/` → Lists files in the server config directory
+- `dayzxb/config/` → Lists files in mission-specific config directory  
+- `profiles/` → Lists files in the profiles directory
+- `mods/` → Lists files in the mods directory
+
+**DO NOT** use absolute paths like `/games/12345/ftproot/dayzxb/config/` - these are server filesystem paths and will not work with the API.
 
 **Available Methods**:
 

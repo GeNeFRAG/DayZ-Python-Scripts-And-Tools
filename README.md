@@ -307,13 +307,13 @@ config = DayZTool.load_config()
 # Create an API client
 client = NitradoAPIClient(config)
 
-# File operations
-files = client.list_files("/games/12345/ftproot/dayzxb/config/")
+# File operations (use relative paths from gameserver root)
+files = client.list_files("config/")
 for file in files:
     print(f"{file['name']} - {file['size']} bytes")
 
-# Download a file
-content = client.download_file("/games/12345/ftproot/dayzxb/config/server.cfg")
+# Download a file (use relative path from gameserver root)
+content = client.download_file("config/server.cfg")
 with open("local_server.cfg", "wb") as f:
     f.write(content)
 
