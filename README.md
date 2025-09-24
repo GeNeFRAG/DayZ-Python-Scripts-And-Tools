@@ -297,6 +297,8 @@ print(f"Available profiles: {config_obj.list_profiles()}")
 
 ### Using the Nitrado API Client
 
+The client constructs and calls actual Nitrado API endpoints using your server's directory structure:
+
 ```python
 from dayz_admin_tools.nitrado.api_client import NitradoAPIClient
 from dayz_admin_tools.base import DayZTool
@@ -307,34 +309,46 @@ config = DayZTool.load_config()
 # Create an API client
 client = NitradoAPIClient(config)
 
-# File operations (use relative paths from gameserver root)
-files = client.list_files("config/")
+# File listing - calls: https://api.nitrado.net/services/{service_id}/gameserver/list?dir=custom
+files = client.list_files("custom/")
 for file in files:
     print(f"{file['name']} - {file['size']} bytes")
 
-# Download a file (use relative path from gameserver root)
-content = client.download_file("config/server.cfg")
-with open("local_server.cfg", "wb") as f:
+# List database files - calls: https://api.nitrado.net/services/{service_id}/gameserver/list?dir=db
+db_files = client.list_files("db/")
+
+# Download event configuration - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=db/events.xml
+content = client.download_file("db/events.xml")
+with open("local_events.xml", "wb") as f:
     f.write(content)
 
-# Player list management
+# Download spawn configuration - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=custom/vanillaplus_loadout.json
+content = client.download_file("custom/vanillaplus_loadout.json")
+
+# Download core economy file - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=cfgeconomycore.xml
+content = client.download_file("cfgeconomycore.xml")
+
+# Player list management - calls: https://api.nitrado.net/services/{service_id}/gameservers
 ban_list = client.get_banlist()
 client.add_to_banlist(['cheater123', 'griefer456'])
-client.remove_from_banlist(['reformed_player'])
 
-# Whitelist management
-whitelist = client.get_whitelist()
+# Settings updates - calls: https://api.nitrado.net/services/{service_id}/gameservers/settings
 client.add_to_whitelist(['admin1', 'moderator2'])
-
-# Priority/Admin list management
-admin_list = client.get_prioritylist()  # or get_adminlist()
 client.add_to_prioritylist(['new_admin'])
 
-# Generic list operations (works with 'bans', 'whitelist', 'priority')
+# Generic list operations - calls: https://api.nitrado.net/services/{service_id}/gameservers/settings
 ban_list = client.get_list('bans')
 client.add_to_list('whitelist', ['player1', 'player2'])
 client.remove_from_list('priority', ['old_admin'])
 ```
+
+**API Endpoints Called:**
+- **File listing**: `GET https://api.nitrado.net/services/{service_id}/gameserver/list`
+- **File download**: `GET https://api.nitrado.net/services/{service_id}/gameserver/download`  
+- **Player lists**: `GET https://api.nitrado.net/services/{service_id}/gameservers`
+- **Settings updates**: `POST https://api.nitrado.net/services/{service_id}/gameservers/settings`
+- **Settings sets**: `GET https://api.nitrado.net/services/{service_id}/gameservers/settings/sets`
+- **Settings defaults**: `GET https://api.nitrado.net/services/{service_id}/gameservers/settings/defaults`
 
 ### Player List Management with API
 

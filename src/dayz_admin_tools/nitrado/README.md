@@ -18,7 +18,9 @@ Key features:
 
 The client is designed to be a minimal wrapper around the Nitrado API, providing core functionality that can be used by higher-level modules.
 
-### Python API Usage
+### Python API Usage - Real Nitrado API Endpoints
+
+The client constructs actual Nitrado API URLs using your server's directory structure:
 
 ```python
 from dayz_admin_tools.nitrado.api_client import NitradoAPIClient
@@ -29,75 +31,69 @@ config = NitradoAPIClient.load_config('my_profile')  # or None for default
 # Initialize the API client
 client = NitradoAPIClient(config)
 
-# List files in a directory (use relative paths from gameserver root)
-files = client.list_files('config/')
+# List custom spawn files - calls: https://api.nitrado.net/services/{service_id}/gameserver/list?dir=custom
+files = client.list_files('custom/')
 for file in files:
     print(f"{file['name']} - {file['size']} bytes")
 
-# List files in mission-specific directory
-files = client.list_files('dayzxb/config/')
+# List database files - calls: https://api.nitrado.net/services/{service_id}/gameserver/list?dir=db  
+db_files = client.list_files('db/')
 
-# Download a file (use relative path from gameserver root)
-content = client.download_file('config/server.cfg')
-with open('local_server.cfg', 'wb') as f:
+# Download events configuration - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=db/events.xml
+content = client.download_file('db/events.xml')
+with open('local_events.xml', 'wb') as f:
     f.write(content)
 
-# Download mission-specific files
-content = client.download_file('dayzxb/config/types.xml')
+# Download types configuration - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=db/types.xml
+content = client.download_file('db/types.xml')
 with open('types.xml', 'wb') as f:
     f.write(content)
 
-# Player List Management
-# Get current ban list
+# Download spawn loadout - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=custom/vanillaplus_loadout.json
+content = client.download_file('custom/vanillaplus_loadout.json')
+
+# Download map group configuration - calls: https://api.nitrado.net/services/{service_id}/gameserver/download?file=mapgroupproto.xml
+content = client.download_file('mapgroupproto.xml')
+
+# Player List Management - calls: https://api.nitrado.net/services/{service_id}/gameservers
 ban_list = client.get_banlist()
 for player in ban_list:
     print(f"Banned player: {player['name']}")
 
-# Add players to ban list
+# Settings updates - calls: https://api.nitrado.net/services/{service_id}/gameservers/settings
 client.add_to_banlist(['cheater123', 'griefer456'])
-
-# Remove players from ban list
-client.remove_from_banlist(['reformed_player'])
-
-# Whitelist operations
-whitelist = client.get_whitelist()
 client.add_to_whitelist(['admin1', 'moderator2'])
-client.remove_from_whitelist(['former_admin'])
-
-# Priority/Admin list operations
-admin_list = client.get_prioritylist()
 client.add_to_prioritylist(['new_admin'])
-client.remove_from_prioritylist(['demoted_admin'])
 
-# Generic list operations (more flexible)
-# Works with 'bans', 'whitelist', 'priority'
-ban_list = client.get_list('bans')
+# Generic list operations - calls: https://api.nitrado.net/services/{service_id}/gameservers/settings
 client.add_to_list('whitelist', ['player1', 'player2'])
 client.remove_from_list('priority', ['old_admin'])
 ```
 
-### Understanding File Paths
+**Nitrado API Endpoints Used:**
 
-The Nitrado API client handles paths relative to your gameserver root directory. The client automatically constructs the full API URL using:
+| Method | Endpoint | Purpose |
+|--------|----------|---------|
+| `list_files()` | `GET /services/{service_id}/gameserver/list` | List directory contents |
+| `download_file()` | `GET /services/{service_id}/gameserver/download` | Download file (2-step process) |
+| `get_banlist()`, etc. | `GET /services/{service_id}/gameservers` | Get current server settings |
+| `add_to_banlist()`, etc. | `POST /services/{service_id}/gameservers/settings` | Update server settings |
+| `get_server_settings()` | `GET /services/{service_id}/gameservers/settings/sets` | Get settings configuration |
 
-- Base URL: `https://api.nitrado.net/services/`
-- Service ID: From your configuration
-- Base path: `/gameserver` (configurable via `nitrado_server.remote_base_path`)
-- Your specified directory: Passed as query parameter
+### Real DayZ Server Directory Structure
 
-**Path Examples:**
-- `config/` → Lists files in the server config directory
-- `dayzxb/config/` → Lists files in mission-specific config directory  
-- `profiles/` → Lists files in the profiles directory
-- `mods/` → Lists files in the mods directory
+The API works with your actual server directories (same as local DayZ server structure):
 
-**DO NOT** use absolute paths like `/games/12345/ftproot/dayzxb/config/` - these are server filesystem paths and will not work with the API.
+**Root Level Files:**
+- `cfgeconomycore.xml`, `cfgeventspawns.xml`, `mapgroupproto.xml`
 
-**Available Methods**:
+**Directories:**
+- `custom/` → Custom spawn configurations (`vanillaplus_loadout.json`, `flags_epic_bambi.json`)
+- `db/` → Core database files (`events.xml`, `types.xml`, `globals.xml`)
+- `build/` → Build configurations
+- `env/` → Environment settings
 
-*File Operations:*
-- `list_files(directory_path)`: List files in a remote directory
-- `download_file(remote_path)`: Download a file and return its content as bytes
+**DO NOT** use absolute paths like `/games/12345/ftproot/` - the API expects relative paths from gameserver root.
 
 *Player List Management:*
 - `get_banlist()`, `get_whitelist()`, `get_prioritylist()`: Retrieve player lists
