@@ -216,58 +216,57 @@ dayz-sort-types-usage --profile myserver --xml custom_types.xml
 - Improves file readability for manual editing
 - Creates automatic backup before modification
 
-### Static Event Item Counter Tools
+### Generic Event Counter Tool
 
-**CLI Commands**: `dayz-sum-staticbuilder-items` and `dayz-sum-staticmildrop-items`
+**CLI Command**: `dayz-generic-event-counter`
 
-Two specialized tools for counting items in static events.
-
-#### Static Builder Items Counter
+A configurable tool for counting items in static events based on event definitions in the configuration file.
 
 **Usage:**
 ```bash
-# Count items in builder events using config paths
-dayz-sum-staticbuilder-items
+# List available event types from configuration
+dayz-generic-event-counter --list-types
 
-# Count items with specific files
-dayz-sum-staticbuilder-items --events cfgeventspawns.xml --groups cfgeventgroups.xml
+# Count items for static builder events
+dayz-generic-event-counter --type static_builder
 
-# Custom output file
-dayz-sum-staticbuilder-items --output builder_counts.csv
+# Count items for military drop events  
+dayz-generic-event-counter --type mildrop_standard
+
+# Count items with custom output file
+dayz-generic-event-counter --type static_builder --output builder_counts.csv
+
+# Count items using specific files
+dayz-generic-event-counter --type mildrop_special --events cfgeventspawns.xml --groups cfgeventgroups.xml
+
+# Count items with pattern matching for debug
+dayz-generic-event-counter --type static_builder --pattern "BuildingSupplies" --debug
 ```
 
 **Parameters:**
 | Parameter | Short | Required | Default | Description |
 |-----------|-------|----------|---------|-------------|
+| `--type` | `-t` | Yes* | - | Event type to count (from config event_definitions) |
+| `--list-types` | - | No | - | List all available event types and exit |
 | `--events` | - | No | paths.events_file | Path to the events.xml file |
 | `--groups` | - | No | paths.eventgroups_file | Path to the cfgeventgroups.xml file |
-| `--output` | - | No | sb_loot.csv | Path to the output CSV file |
+| `--output` | - | No | event_counts.csv | Path to the output CSV file |
+| `--pattern` | - | No | - | Optional regex pattern to filter events |
 | `--profile` | - | No | default | Configuration profile to use |
-| `--console` | - | No | - | Log detailed output summary |
-
-#### Static Military Drop Items Counter
-
-**Usage:**
-```bash
-# Count items in military drop events using config paths
-dayz-sum-staticmildrop-items
-
-# Count items with specific files and debug output
-dayz-sum-staticmildrop-items --events cfgeventspawns.xml --groups cfgeventgroups.xml --debug
-
-# Custom output file
-dayz-sum-staticmildrop-items --output mildrop_counts.csv
-```
-
-**Parameters:**
-| Parameter | Short | Required | Default | Description |
-|-----------|-------|----------|---------|-------------|
-| `--events` | - | No | paths.events_file | Path to the events.xml file |
-| `--groups` | - | No | paths.eventgroups_file | Path to the cfgeventgroups.xml file |
-| `--output` | - | No | md_loot.csv | Path to the output CSV file |
 | `--debug` | - | No | - | Enable debug logging |
-| `--profile` | - | No | default | Configuration profile to use |
-| `--console` | - | No | - | Log detailed output summary |
+
+*Either `--type` or `--list-types` is required.
+
+**Event Types Configuration:**
+Event types are defined in the configuration file under `event_definitions`. Each event type specifies:
+- `event_name_pattern`: Regex pattern to match event names
+- `default_output_file`: Default CSV output filename
+- `description`: Human-readable description
+
+Example event types:
+- `static_builder`: Builder-related static events
+- `mildrop_standard`: Standard military drop events  
+- `mildrop_special`: Special military drop events
 
 **Features**:
 - Analyze event spawner configurations
@@ -411,11 +410,14 @@ dayz-check-usage-tags --xml_file new_types.xml
 Count and analyze items used in static events:
 
 ```bash
+# List available event types
+dayz-generic-event-counter --list-types
+
 # Count items in builder events
-dayz-sum-staticbuilder-items --output builder.csv
+dayz-generic-event-counter --type static_builder --output builder.csv
 
 # Count items in military drop events
-dayz-sum-staticmildrop-items --output mildrop.csv
+dayz-generic-event-counter --type mildrop_standard --output mildrop.csv
 
 # Update types.xml with counts from analysis
 dayz-sync-csv-to-types builder.csv mildrop.csv --organize

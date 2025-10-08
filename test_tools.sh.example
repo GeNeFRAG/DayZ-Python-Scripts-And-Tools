@@ -339,26 +339,45 @@ test_xml_tools() {
     PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sort-types-usage --profile $CONFIG_PROFILE
     
     echo ""   
-    echo -e "${BLUE}==========================================${NC}"
-    echo -e "${BLUE}Running test: dayz-sum-staticbuilder-items${NC}"
-    echo -e "${BLUE}==========================================${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    echo -e "${BLUE}Running test: dayz-generic-event-counter${NC}"
+    echo -e "${BLUE}============================================${NC}"
+    
+    echo -e "${YELLOW}Listing available event types...${NC}"
+    if ! dayz-generic-event-counter --list-types --profile "$CONFIG_PROFILE"; then
+        echo -e "${RED}✗ Failed to list event types${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}✓ Event types listed successfully${NC}"
+
+    echo -e "${YELLOW}Testing static builder events...${NC}"
     # This tool returns a count as exit code, so we handle it specially
     set +e
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticbuilder-items --profile $CONFIG_PROFILE --console
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-generic-event-counter --type static_builder --profile $CONFIG_PROFILE --console
     BUILDER_COUNT=$?
     set -e
     echo -e "${GREEN}✓ Static builder items count: $BUILDER_COUNT${NC}"
     
-    echo ""
-    echo -e "${BLUE}=========================================${NC}"
-    echo -e "${BLUE}Running test: dayz-sum-staticmildrop-items${NC}"
-    echo -e "${BLUE}=========================================${NC}"
-    # This tool returns a count as exit code, so we handle it specially
+    echo -e "${YELLOW}Testing standard mildrop events...${NC}"
     set +e
-    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-sum-staticmildrop-items --profile $CONFIG_PROFILE --console
-    MILDROP_COUNT=$?
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-generic-event-counter --type mildrop_standard --profile $CONFIG_PROFILE --console
+    MILDROP_STANDARD_COUNT=$?
     set -e
-    echo -e "${GREEN}✓ Static military drop items count: $MILDROP_COUNT${NC}"
+    echo -e "${GREEN}✓ Standard mildrop items count: $MILDROP_STANDARD_COUNT${NC}"
+    
+    echo -e "${YELLOW}Testing special mildrop events...${NC}"
+    set +e
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-generic-event-counter --type mildrop_special --profile $CONFIG_PROFILE --console
+    MILDROP_SPECIAL_COUNT=$?
+    set -e
+    echo -e "${GREEN}✓ Special mildrop items count: $MILDROP_SPECIAL_COUNT${NC}"
+    
+    echo -e "${YELLOW}Testing manual configuration...${NC}"
+    set +e
+    PYTHONVERBOSE=0 LOGLEVEL=DEBUG dayz-generic-event-counter --pattern "StaticBuilder_" --group "SkullsMaterials" --profile $CONFIG_PROFILE --console
+    MANUAL_COUNT=$?
+    set -e
+    echo -e "${GREEN}✓ Manual configuration test successful: $MANUAL_COUNT${NC}"
 
     REF_TYPES="/path/to/your/types.xml"
     if [ ! -f "$REF_TYPES" ]; then

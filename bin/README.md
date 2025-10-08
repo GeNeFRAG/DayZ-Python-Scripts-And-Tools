@@ -47,8 +47,7 @@ Here are the primary tools available:
 - `copy-types-values` - Copy specific values between types.xml files
 - `replace-usagevalue-tag-types` - Update usage and value tags in types.xml
 - `sort-types-usage` - Organize types.xml by usage categories
-- `sum-staticbuilder-items` - Count items in static builder events
-- `sum-staticmildrop-items` - Count items in static military drop events
+- `generic-event-counter` - Count items in configurable static events
 - `sync-csv-to-types` - Update types.xml from CSV data with quantity adjustments
 - `types-to-excel` - Convert between types.xml and Excel formats
 
@@ -68,6 +67,37 @@ For detailed usage instructions for each tool, run:
 ```bash
 ./bin/tool-name --help
 ```
+
+## Generic Event Counter
+
+The `generic-event-counter` tool provides a unified approach to analyzing static events with configurable event types.
+
+### Usage
+```bash
+# List available event types
+./generic-event-counter --list-types
+
+# Analyze specific event type
+./generic-event-counter --type static_builder
+
+# Analyze standard mildrop events
+./generic-event-counter --type mildrop_standard
+
+# Analyze special mildrop events  
+./generic-event-counter --type mildrop_special
+
+# Manual configuration
+./generic-event-counter --pattern "StaticCustom_" --group "CustomLoot"
+```
+
+### Features
+- Configuration-driven event definitions
+- Support for ignore lists per event type
+- Event consistency validation
+- Flexible pattern matching
+- Combined analysis support
+
+See main README.md for detailed configuration examples.
 
 ## Development
 

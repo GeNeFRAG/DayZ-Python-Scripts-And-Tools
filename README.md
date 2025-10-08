@@ -93,7 +93,7 @@ All configured special events will be extracted, counted per player, and include
 - **Copy Types Values**: Copy specific values between types.xml files (`dayz-copy-types-values`)
 - **Replace Usage/Value Tags**: Update usage and value tags in types.xml (`dayz-replace-usagevalue-tag-types`)
 - **Sort Types by Usage**: Organize types.xml by usage categories (`dayz-sort-types-usage`)
-- **Static Event Item Counter**: Count items in static events (`dayz-sum-staticbuilder-items`, `dayz-sum-staticmildrop-items`)
+- **Generic Event Counter**: Count items in configurable static events (`dayz-generic-event-counter`)
 - **Sync CSV to Types**: Update types.xml from CSV data with quantity adjustments (`dayz-sync-csv-to-types`)
 - **Types to Excel**: Convert between types.xml and Excel formats for easy editing (`dayz-types-to-excel`)
 
@@ -126,6 +126,104 @@ All configured special events will be extracted, counted per player, and include
 - **Generate Spawner Entries**: Generate spawner entries from item specifications (`dayz-generate-spawner-entries`)
 - **Sum Items JSON**: Sum and analyze items in JSON files (`dayz-sum-items-json`)
 - **Split Loot Structures**: Split large loot structure files by type classification (`dayz-split-loot-structures`)
+
+## Generic Event Counter
+
+The generic event counter provides a unified, configurable approach to analyzing static events. Instead of separate tools for each event type, you can define any number of event types in your configuration.
+
+### Usage Examples
+
+```bash
+# List all available event types from your configuration
+dayz-generic-event-counter --list-types
+
+# Analyze predefined event types
+dayz-generic-event-counter --type static_builder
+dayz-generic-event-counter --type mildrop_standard  
+dayz-generic-event-counter --type mildrop_special
+
+# Use manual configuration (bypass predefined types)
+dayz-generic-event-counter --pattern "StaticCustom_" --group "CustomLoot"
+
+# Override file paths
+dayz-generic-event-counter --type static_builder --events /path/to/events.xml --groups /path/to/groups.xml
+```
+
+### Configuration
+
+Event types are defined in your profile's `event_definitions` section:
+
+```json
+{
+  "event_definitions": {
+    "static_builder": {
+      "description": "Static Builder Events - Base building materials",
+      "event_pattern": "StaticBuilder_",
+      "group_name": "SkullsMaterials",
+      "output_file": "sb_loot.csv",
+      "ignore_types": []
+    },
+    "mildrop_standard": {
+      "description": "Standard Military Drop Events",
+      "event_pattern": "StaticMildrop",
+      "group_name": "Mildrop", 
+      "output_file": "md_loot.csv",
+      "ignore_types": ["Land_Container_1Moh_DE", "Wreck_UH1Y"]
+    },
+    "custom_event": {
+      "description": "Custom Server Events",
+      "event_pattern": "StaticCustom_",
+      "group_name": "CustomLoot",
+      "output_file": "custom_loot.csv",
+      "ignore_types": ["SomeIgnoredType"]
+    }
+  }
+}
+```
+
+Each event definition requires:
+- `event_pattern`: Pattern to match event names (e.g., "StaticBuilder_")
+- `group_name`: Name of the group to analyze in cfgeventgroups.xml
+- `output_file`: CSV filename for results
+- `ignore_types`: (optional) List of item types to exclude from counting
+
+## Migration from Specific Event Counters (Breaking Changes)
+
+### v2.0 Breaking Changes
+
+The following tools have been **removed** and replaced with the generic event counter:
+- `dayz-sum-staticbuilder-items` → Use `dayz-generic-event-counter --type static_builder`
+- `dayz-sum-staticmildrop-items` → Use `dayz-generic-event-counter --type mildrop_standard` or `--type mildrop_special`
+
+### Migration Examples
+
+**Old Usage:**
+```bash
+dayz-sum-staticbuilder-items --profile myserver
+dayz-sum-staticmildrop-items --profile myserver --type standard
+dayz-sum-staticmildrop-items --profile myserver --type special
+```
+
+**New Usage:**
+```bash
+dayz-generic-event-counter --type static_builder --profile myserver
+dayz-generic-event-counter --type mildrop_standard --profile myserver
+dayz-generic-event-counter --type mildrop_special --profile myserver
+```
+
+### Build Script Migration
+
+**Old build script calls:**
+```bash
+$DAYZ_SUM_STATICBUILDER --profile "$CONFIG_PROFILE"
+$DAYZ_SUM_STATICMILDROP --profile "$CONFIG_PROFILE" --type standard
+```
+
+**New build script calls:**
+```bash
+$DAYZ_GENERIC_EVENT_COUNTER --type static_builder --profile "$CONFIG_PROFILE"
+$DAYZ_GENERIC_EVENT_COUNTER --type mildrop_standard --profile "$CONFIG_PROFILE"
+```
 
 ## Usage Examples
 

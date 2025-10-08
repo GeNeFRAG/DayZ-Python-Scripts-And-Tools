@@ -39,8 +39,7 @@ setup(
             "dayz-copy-types-values=dayz_admin_tools.xml.types.copy_types_values:main",
             "dayz-replace-usagevalue-tag-types=dayz_admin_tools.xml.types.replace_usagevalue_tag_types:main",
             "dayz-sort-types-usage=dayz_admin_tools.xml.types.sort_types_usage:main",
-            "dayz-sum-staticbuilder-items=dayz_admin_tools.xml.types.sum_staticbuilder_items:main",
-            "dayz-sum-staticmildrop-items=dayz_admin_tools.xml.types.sum_staticmildrop_items:main",
+            "dayz-generic-event-counter=dayz_admin_tools.xml.types.generic_event_counter_cli:main",
             "dayz-sync-csv-to-types=dayz_admin_tools.xml.types.sync_csv_to_types:main",
             "dayz-types-to-excel=dayz_admin_tools.xml.types.types_to_excel:main",
             # JSON Tools

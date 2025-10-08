@@ -35,11 +35,31 @@
     "default_coordinates": "10106.6:8.5:1696.5"
   },
   "event_counter": {
-    "output_files": {
-      "StaticMildrop": "md_loot.csv",
-      "StaticBuilder_": "sb_loot.csv"
-    },
     "default_output_file": "event_loot.csv"
+  },
+  "_comment_event_definitions": "Define static event types for the generic event counter. Each event type specifies the pattern to match, group to analyze, output file, and optional ignore list.",
+  "event_definitions": {
+    "static_builder": {
+      "description": "Static Builder Events - Base building materials",
+      "event_pattern": "StaticBuilder_",
+      "group_name": "SkullsMaterials",
+      "output_file": "sb_loot.csv",
+      "ignore_types": []
+    },
+    "mildrop_standard": {
+      "description": "Standard Military Drop Events",
+      "event_pattern": "StaticMildrop",
+      "group_name": "Mildrop",
+      "output_file": "md_loot.csv",
+      "ignore_types": ["Land_Container_1Moh_DE", "Wreck_UH1Y"]
+    },
+    "mildrop_special": {
+      "description": "Special Military Drop Events",
+      "event_pattern": "StaticMildropSpecial",
+      "group_name": "MildropSpecial",
+      "output_file": "md_special_loot.csv",
+      "ignore_types": ["Land_Container_1Moh_DE", "Wreck_UH1Y"]
+    }
   },
   "event_spawn_plotter": {
     "map_file": "/path/to/your/map.jpg",
