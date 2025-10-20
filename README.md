@@ -59,30 +59,6 @@ All tools use the `general.output_path` setting to store their output files, mak
 
 Configuration options are defined in `src/config/profiles/default.json`. You can create custom profiles by adding new JSON files to the profiles directory.
 
-### Special/Other Events Configuration
-
-To extract and report on custom/special events in the ADM analyzer, add a `special_events` section to your config JSON. Example:
-
-```json
-"special_events": {
-  "enabled": true,
-  "events": [
-    {
-      "name": "treasure_hunt",
-      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*found treasure at pos=<([0-9.-]+), ([0-9.-]+), ([0-9.-]+)>",
-      "description": "Treasure Hunt Event"
-    },
-    {
-      "name": "custom_event",
-      "regexp": "Player \"([^\"]+?)\" \\(id=([A-F0-9]+)\\).*did something special",
-      "description": "Custom server event"
-    }
-  ]
-}
-```
-
-All configured special events will be extracted, counted per player, and included as columns in the CSV and Markdown summary reports.
-
 ## Available Tools
 
 ### XML Types Tools
